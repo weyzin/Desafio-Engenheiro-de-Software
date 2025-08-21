@@ -4,6 +4,8 @@ Guia rápido para rodar, avaliar e testar o MVP multi-tenant.
 
 ---
 
+![CI](https://github.com/weyzin/Desafio-Engenheiro-de-Software/actions/workflows/ci.yml/badge.svg)
+
 ## 🚀 Visão Geral
 
 API **multi-tenant** em Laravel para gestão de veículos.
