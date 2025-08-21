@@ -1,0 +1,936 @@
+openapi: 3.0.3
+info:
+  title: Vehicle Management API (MVP)
+  version: 1.0.0
+  description: |
+    API multitenant construída em Laravel.
+    - Versionamento: prefixo `/api/v1`
+    - Respostas sempre em JSON.
+    - **Tenancy:** resolução preferencial por subdomínio; fallback por header `X-Tenant`.
+    - **Auth:** Laravel Sanctum (cookies HttpOnly) para SPA; autorização via papéis (superuser/owner/agent) e Policies.
+    - **Erros:** `{ code, message, details }` padronizados.
+servers:
+  - url: https://api.example.com/api/v1
+    description: Produção (exemplo)
+  - url: https://staging.example.com/api/v1
+    description: Staging (exemplo)
+
+tags:
+  - name: Auth
+    description: Endpoints de autenticação
+  - name: Users
+    description: Perfil do usuário autenticado
+  - name: Vehicles
+    description: CRUD de veículos
+
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login de usuário (Sanctum)
+      description: |
+        Efetua login e cria sessão (Sanctum) usando cookies HttpOnly.
+        Requer envio de CSRF token conforme configuração do Sanctum na SPA.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: agent@tenant.com
+                password:
+                  type: string
+                  format: password
+                  example: senhaSegura123
+      responses:
+        '200':
+          description: Login bem-sucedido
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: Cookie(s) de sessão HttpOnly gerenciados pelo Sanctum.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+              examples:
+                success:
+                  summary: Usuário logado
+                  value:
+                    data:
+                      id: 42
+                      name: "Alex Agent"
+                      email: "agent@tenant.com"
+                      role: "agent"
+                      tenant_id: "a1b2c3d4-tenant"
+        '401':
+          description: Credenciais inválidas (não autenticado)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid:
+                  value:
+                    code: UNAUTHORIZED
+                    message: Credenciais inválidas.
+        '429':
+          description: Rate-limit atingido (rota /auth/*)
+          headers:
+            Retry-After:
+              description: Segundos a aguardar antes de tentar novamente.
+              schema:
+                type: integer
+                example: 60
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                limited:
+                  value:
+                    code: RATE_LIMIT_EXCEEDED
+                    message: Too many requests.
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout de usuário (invalidar sessão/token)
+      description: Invalida a sessão atual do usuário autenticado.
+      security:
+        - cookieAuth: []
+      responses:
+        '204':
+          description: Logout realizado (sem conteúdo)
+        '401':
+          description: Não autenticado (sessão ausente/expirada)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                unauth:
+                  value:
+                    code: UNAUTHENTICATED
+                    message: Sessão inválida ou expirada.
+        '429':
+          description: Rate-limit atingido
+          headers:
+            Retry-After:
+              description: Segundos a aguardar antes de tentar novamente.
+              schema:
+                type: integer
+                example: 60
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                limited:
+                  value:
+                    code: RATE_LIMIT_EXCEEDED
+                    message: Too many requests.
+
+  /auth/forgot:
+    post:
+      tags: [Auth]
+      summary: Solicitar recuperação de senha
+      description: |
+        Envia e-mail de recuperação de senha para o usuário informado (resposta idempotente).
+        Nota: o fluxo completo de reset (token temporário, validação) será descrito em fase futura.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: agent@tenant.com
+      responses:
+        '200':
+          description: Email enviado (mesmo se o usuário não existir)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Se este e-mail existir, a recuperação será enviada."
+        '429':
+          description: Rate-limit atingido (rota /auth/*)
+          headers:
+            Retry-After:
+              description: Segundos a aguardar antes de tentar novamente.
+              schema:
+                type: integer
+                example: 60
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                limited:
+                  value:
+                    code: RATE_LIMIT_EXCEEDED
+                    message: Too many requests.
+
+  /me:
+    get:
+      tags: [Users]
+      summary: Informações do usuário autenticado
+      description: Retorna os dados do usuário atual e seu tenant (quando aplicável).
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Usuário autenticado
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Exemplo de políticas de cache para GET.
+              example: public, max-age=60
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+              examples:
+                me:
+                  value:
+                    data:
+                      id: 42
+                      name: "Alex Agent"
+                      email: "agent@tenant.com"
+                      role: "agent"
+                      tenant_id: "a1b2c3d4-tenant"
+        '401':
+          description: Não autenticado (sessão ausente/expirada)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                unauth:
+                  value:
+                    code: UNAUTHENTICATED
+                    message: Sessão inválida ou expirada.
+        '429':
+          description: Rate-limit atingido
+          headers:
+            Retry-After:
+              description: Segundos a aguardar antes de tentar novamente.
+              schema:
+                type: integer
+                example: 60
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                limited:
+                  value:
+                    code: RATE_LIMIT_EXCEEDED
+                    message: Too many requests.
+
+  /vehicles:
+    get:
+      tags: [Vehicles]
+      summary: Listar veículos (com filtros, paginação e ordenação)
+      description: |
+        Lista veículos do **tenant corrente**.
+        **Tenancy:** resolvido por subdomínio; fallback por header `X-Tenant`.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - $ref: '#/components/parameters/FilterBrand'
+        - $ref: '#/components/parameters/FilterModel'
+        - $ref: '#/components/parameters/FilterPriceMin'
+        - $ref: '#/components/parameters/FilterPriceMax'
+        - $ref: '#/components/parameters/Sort'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Lista paginada de veículos
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Exemplo de políticas de cache para GET.
+              example: public, max-age=60
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedVehicleList'
+              examples:
+                page2:
+                  summary: Página 2 com 2 itens
+                  value:
+                    data:
+                      - id: 101
+                        tenant_id: "a1b2c3d4-tenant"
+                        brand: "Toyota"
+                        model: "Corolla"
+                        year: 2021
+                        price: 105000
+                        status: "available"
+                        images: ["https://cdn.example.com/veh/101-1.jpg"]
+                        created_by: 5
+                        updated_by: 5
+                        deleted_by: null
+                        created_at: "2025-08-01T10:00:00Z"
+                        updated_at: "2025-08-01T10:00:00Z"
+                        deleted_at: null
+                      - id: 102
+                        tenant_id: "a1b2c3d4-tenant"
+                        brand: "Honda"
+                        model: "Civic"
+                        year: 2020
+                        price: 98000
+                        status: "reserved"
+                        images: []
+                        created_by: 7
+                        updated_by: 8
+                        deleted_by: null
+                        created_at: "2025-08-01T10:05:00Z"
+                        updated_at: "2025-08-02T09:00:00Z"
+                        deleted_at: null
+                    meta:
+                      total: 120
+                      page: 2
+                      per_page: 20
+                      last_page: 6
+                    links:
+                      next: "https://api.example.com/api/v1/vehicles?page=3"
+                      prev: "https://api.example.com/api/v1/vehicles?page=1"
+        '401':
+          description: Não autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Sem permissão para listar (papel/tenant)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                forbidden:
+                  value:
+                    code: FORBIDDEN
+                    message: Ação não permitida.
+        '422':
+          description: Filtros inválidos (ex.: price_min > price_max)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                validation:
+                  value:
+                    code: VALIDATION_ERROR
+                    message: Campos inválidos.
+                    details:
+                      price_min: ["Deve ser menor ou igual a price_max"]
+        '429':
+          description: Rate-limit atingido
+          headers:
+            Retry-After:
+              description: Segundos a aguardar antes de tentar novamente.
+              schema:
+                type: integer
+                example: 60
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                limited:
+                  value:
+                    code: RATE_LIMIT_EXCEEDED
+                    message: Too many requests.
+
+    post:
+      tags: [Vehicles]
+      summary: Criar veículo
+      description: |
+        Cria um veículo no **tenant corrente**.
+        **RBAC:** `owner` e `agent` podem criar; regras podem variar conforme Policy.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VehicleCreateRequest'
+            examples:
+              create-ok:
+                value:
+                  brand: "Toyota"
+                  model: "Corolla"
+                  year: 2021
+                  price: 105000
+                  status: "available"
+                  images: ["https://cdn.example.com/veh/corolla-1.jpg"]
+      responses:
+        '201':
+          description: Veículo criado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SingleVehicleResponse'
+        '401':
+          description: Não autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Sem permissão para criar (papel/tenant)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflito (ex.: placa já existente no tenant)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                conflict:
+                  value:
+                    code: CONFLICT
+                    message: Valor já utilizado neste tenant.
+                    details:
+                      plate: ["Já existe um veículo com esta placa."]
+        '422':
+          description: Validação falhou
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid:
+                  value:
+                    code: VALIDATION_ERROR
+                    message: Campos inválidos.
+                    details:
+                      price: ["O preço deve ser >= 0"]
+        '429':
+          description: Rate-limit atingido
+          headers:
+            Retry-After:
+              description: Segundos a aguardar antes de tentar novamente.
+              schema:
+                type: integer
+                example: 60
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                limited:
+                  value:
+                    code: RATE_LIMIT_EXCEEDED
+                    message: Too many requests.
+
+  /vehicles/{id}:
+    get:
+      tags: [Vehicles]
+      summary: Detalhar veículo por ID
+      description: Retorna detalhes do veículo **do tenant corrente**.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - name: id
+          in: path
+          required: true
+          description: ID interno do veículo
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Veículo encontrado
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Exemplo de políticas de cache para GET.
+              example: public, max-age=60
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SingleVehicleResponse'
+        '401':
+          description: Não autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Sem permissão para visualizar (papel/tenant)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Não encontrado (ou pertence a outro tenant)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                not-found:
+                  value:
+                    code: NOT_FOUND
+                    message: Recurso não encontrado.
+        '429':
+          description: Rate-limit atingido
+          headers:
+            Retry-After:
+              description: Segundos a aguardar antes de tentar novamente.
+              schema:
+                type: integer
+                example: 60
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                limited:
+                  value:
+                    code: RATE_LIMIT_EXCEEDED
+                    message: Too many requests.
+
+    put:
+      tags: [Vehicles]
+      summary: Atualizar veículo
+      description: |
+        Atualiza campos do veículo **do tenant corrente**.
+        **RBAC:** `owner` e `agent` conforme Policy.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VehicleUpdateRequest'
+            examples:
+              update-price:
+                value:
+                  price: 99000
+                  status: "available"
+      responses:
+        '200':
+          description: Veículo atualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SingleVehicleResponse'
+        '401':
+          description: Não autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Sem permissão para atualizar (papel/tenant)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Não encontrado (ou pertence a outro tenant)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validação falhou
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate-limit atingido
+          headers:
+            Retry-After:
+              description: Segundos a aguardar antes de tentar novamente.
+              schema:
+                type: integer
+                example: 60
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                limited:
+                  value:
+                    code: RATE_LIMIT_EXCEEDED
+                    message: Too many requests.
+
+    delete:
+      tags: [Vehicles]
+      summary: Excluir veículo
+      description: |
+        Exclui o veículo **do tenant corrente**.
+        Pode ser soft-delete conforme configuração.
+        **RBAC:** `owner` e `agent` (se permitido pela Policy).
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '204':
+          description: Excluído com sucesso
+        '401':
+          description: Não autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Sem permissão para excluir (papel/tenant)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Não encontrado (ou pertence a outro tenant)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate-limit atingido
+          headers:
+            Retry-After:
+              description: Segundos a aguardar antes de tentar novamente.
+              schema:
+                type: integer
+                example: 60
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                limited:
+                  value:
+                    code: RATE_LIMIT_EXCEEDED
+                    message: Too many requests.
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: laravel_session
+      description: |
+        Sessão autenticada via Laravel Sanctum (cookie HttpOnly).
+        A SPA deve gerenciar também o header `X-XSRF-TOKEN` para CSRF, quando aplicável.
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Definido apenas para compatibilidade futura.
+        **Não utilizado neste MVP.**
+
+  parameters:
+    TenantHeader:
+      name: X-Tenant
+      in: header
+      required: false
+      description: |
+        Identificador do tenant (fallback quando o subdomínio não está disponível).
+        Formato livre definido pela aplicação (ex.: slug ou UUID).
+      schema:
+        type: string
+        example: acme
+    FilterBrand:
+      name: brand
+      in: query
+      required: false
+      description: Filtra por marca (match exato ou prefixo, conforme implementação).
+      schema:
+        type: string
+        example: Toyota
+    FilterModel:
+      name: model
+      in: query
+      required: false
+      description: Filtra por modelo (match exato ou prefixo, conforme implementação).
+      schema:
+        type: string
+        example: Corolla
+    FilterPriceMin:
+      name: price_min
+      in: query
+      required: false
+      description: Preço mínimo (inclusive).
+      schema:
+        type: number
+        format: double
+        minimum: 0
+        example: 80000
+    FilterPriceMax:
+      name: price_max
+      in: query
+      required: false
+      description: Preço máximo (inclusive).
+      schema:
+        type: number
+        format: double
+        minimum: 0
+        example: 120000
+    Sort:
+      name: sort
+      in: query
+      required: false
+      description: |
+        Campos separados por vírgula; `-` indica ordem decrescente.
+        Exemplos: `price,-year` (preço asc, ano desc).
+      schema:
+        type: string
+        example: price,-year
+    Page:
+      name: page
+      in: query
+      required: false
+      description: Página (inicia em 1).
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PerPage:
+      name: per_page
+      in: query
+      required: false
+      description: Itens por página (limite máximo definido pela API; sugerido 100).
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+  schemas:
+    User:
+      type: object
+      required: [id, name, email, role]
+      properties:
+        id: { type: integer, example: 42 }
+        name: { type: string, example: "Alex Agent" }
+        email: { type: string, format: email, example: "agent@tenant.com" }
+        role:
+          type: string
+          enum: [superuser, owner, agent]
+          example: agent
+        tenant_id:
+          type: string
+          nullable: true
+          description: UUID/slug do tenant (ausente para superuser global, se aplicável)
+          example: "a1b2c3d4-tenant"
+
+    Vehicle:
+      type: object
+      required: [id, tenant_id, brand, model, year, price, status, created_at, updated_at]
+      properties:
+        id: { type: integer, example: 101 }
+        tenant_id:
+          type: string
+          description: Identificador lógico do tenant
+          example: "a1b2c3d4-tenant"
+        brand: { type: string, example: "Toyota" }
+        model: { type: string, example: "Corolla" }
+        year:
+          type: integer
+          minimum: 1900
+          maximum: 2100
+          example: 2021
+        price:
+          type: number
+          format: double
+          minimum: 0
+          example: 105000
+        status:
+          type: string
+          enum: [available, reserved, sold]
+          example: available
+        images:
+          type: array
+          items:
+            type: string
+            format: uri
+          example:
+            - "https://cdn.example.com/veh/101-1.jpg"
+            - "https://cdn.example.com/veh/101-2.jpg"
+        created_by:
+          type: integer
+          nullable: true
+          example: 5
+        updated_by:
+          type: integer
+          nullable: true
+          example: 8
+        deleted_by:
+          type: integer
+          nullable: true
+          example: null
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-08-01T10:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2025-08-02T09:00:00Z"
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+
+    VehicleCreateRequest:
+      type: object
+      required: [brand, model, year, price]
+      properties:
+        brand: { type: string, example: "Toyota" }
+        model: { type: string, example: "Corolla" }
+        year:
+          type: integer
+          minimum: 1900
+          maximum: 2100
+          example: 2021
+        price:
+          type: number
+          format: double
+          minimum: 0
+          example: 105000
+        status:
+          type: string
+          enum: [available, reserved, sold]
+          default: available
+        images:
+          type: array
+          items:
+            type: string
+            format: uri
+          description: URLs (públicas ou assinadas) de imagens armazenadas (ex.: S3)
+      example:
+        brand: "Toyota"
+        model: "Corolla"
+        year: 2021
+        price: 105000
+        status: "available"
+        images: ["https://cdn.example.com/veh/corolla-1.jpg"]
+
+    VehicleUpdateRequest:
+      type: object
+      properties:
+        brand: { type: string }
+        model: { type: string }
+        year:
+          type: integer
+          minimum: 1900
+          maximum: 2100
+        price:
+          type: number
+          format: double
+          minimum: 0
+        status:
+          type: string
+          enum: [available, reserved, sold]
+        images:
+          type: array
+          items:
+            type: string
+            format: uri
+
+    SingleVehicleResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/Vehicle'
+
+    PaginatedVehicleList:
+      type: object
+      required: [data, meta, links]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vehicle'
+        meta:
+          type: object
+          required: [total, page, per_page]
+          properties:
+            total: { type: integer, example: 120 }
+            page: { type: integer, example: 2 }
+            per_page: { type: integer, example: 20 }
+            last_page:
+              type: integer
+              nullable: true
+              example: 6
+        links:
+          type: object
+          properties:
+            next: { type: string, format: uri, nullable: true }
+            prev: { type: string, format: uri, nullable: true }
+
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          example: VALIDATION_ERROR
+        message:
+          type: string
+          example: Campos inválidos.
+        details:
+          type: object
+          additionalProperties: true
+          nullable: true
+          example:
+            price: ["O preço deve ser >= 0"]

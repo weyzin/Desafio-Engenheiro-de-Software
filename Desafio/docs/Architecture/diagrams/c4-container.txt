@@ -1,0 +1,38 @@
+# C4 — Nível 2 (Containers)
+
+Containers principais:
+1) Browser/React SPA
+   - Build estático; roteamento client-side; captura de subdomínio para tenant.
+   - Consome /api/v1; gerencia sessão (Sanctum); estados de loading/erro.
+   - Injeta token CSRF/XSRF e utiliza cookie HttpOnly conforme definido em ADR-02.
+
+2) API Laravel
+   - Módulos: Auth, Tenant Resolver (subdomínio/header), RBAC (Policies), Vehicles, Errors/Pagination/Filters, Audit Logger, Rate-limit.
+   - Exposição REST JSON; validações; logs estruturados; correlação de requisições.
+   - Endpoints servidos via HTTPS, protegidos por middlewares (auth:sanctum, tenant, throttle).
+
+3) RDS (DB relacional)
+   - Tabelas com `tenant_id`; constraints compostas; índices para consultas de filtro/paginação.
+
+4) S3 (Object Storage)
+   - Buckets versionados/opcionais; políticas por prefixo de tenant.
+
+5) Redis (opcional no MVP, recomendado)
+   - Rate-limit, cache de resoluções de tenant e sessões (se necessário).
+   - Nota: no MVP pode ser substituído por cache em DB relacional, mas com impacto em performance/latência.
+
+6) Email/Notificação (SES/SMTP)
+   - Envio de emails de recuperação de senha e notificações básicas.
+   - Evolução futura: envio assíncrono via fila (ex.: SQS).
+
+7) Observabilidade
+   - CloudWatch (logs/métricas), alarmes para erros 5xx e p95 de latência; endpoint /health.
+   - Evolução futura: integração com ELK ou OpenTelemetry para tracing mais avançado.
+
+Setas:
+SPA → API (HTTPS, JSON)
+API ↔ Redis (TTL rate-limit/cache)
+API ↔ RDS (SQL)
+API ↔ S3 (SDK)
+API → Email/SES (SMTP/SDK)
+API → Observabilidade (Logs/Métricas/Tracing)

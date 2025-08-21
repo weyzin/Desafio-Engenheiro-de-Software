@@ -1,0 +1,757 @@
+{
+  "info": {
+    "_postman_id": "b2a9d2a2-0e1f-4f2c-9f4f-20250820224601",
+    "name": "Desafio — API v1 (Laravel)",
+    "description": "Coleção Postman para o MVP (Auth, Users, Vehicles).\n\nObservações:\n- Tenancy: enviar `X-Tenant` (variável {{x_tenant}}) em todas as rotas autenticadas.\n- Auth: Sanctum com cookies HttpOnly. Em ambientes com CSRF habilitado, execute `GET /sanctum/csrf-cookie` antes do login e propague `X-XSRF-TOKEN` (ver Pre-request Script).\n- Padrões de resposta: sucesso com envelope `{ data }`; listas com `data/meta/links`; erros JSON com `{ code, message, details? }`.\n- Rate limit: 429 usa `code: RATE_LIMIT_EXCEEDED` e header `Retry-After`.\n",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "x_tenant",
+      "value": "acme",
+      "type": "string"
+    },
+    {
+      "key": "email",
+      "value": "owner@acme.com",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "Password!123",
+      "type": "string"
+    },
+    {
+      "key": "xsrf_token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Headers padrão e Tenancy",
+          "const tenant = pm.environment.get('x_tenant') || pm.collectionVariables.get('x_tenant');",
+          "if (tenant) { pm.request.headers.upsert({ key: 'X-Tenant', value: tenant }); }",
+          "pm.request.headers.upsert({ key: 'Accept', value: 'application/json' });",
+          "// CSRF opcional (Sanctum)",
+          "const xsrf = pm.environment.get('xsrf_token') || pm.collectionVariables.get('xsrf_token');",
+          "if (xsrf) { pm.request.headers.upsert({ key: 'X-XSRF-TOKEN', value: xsrf }); }"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "GET /sanctum/csrf-cookie (opcional)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/../sanctum/csrf-cookie",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "..",
+                "sanctum",
+                "csrf-cookie"
+              ]
+            },
+            "description": "Obtém cookie XSRF-TOKEN quando o backend exige fluxo CSRF stateful (Sanctum)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const token = pm.cookies.get('XSRF-TOKEN');",
+                  "if (token) {",
+                  "  pm.environment.set('xsrf_token', token);",
+                  "  pm.test('XSRF token armazenado', function(){ pm.expect(token).to.be.a('string'); });",
+                  "} else {",
+                  "  console.warn('XSRF cookie não presente — ok se CSRF estiver desabilitado no dev.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /auth/login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Autentica e inicia sessão (Sanctum).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"data\": {\n    \"id\": \"uuid\",\n    \"email\": \"owner@acme.com\"\n  }\n}"
+            },
+            {
+              "name": "401 UNAUTHENTICATED",
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"code\": \"UNAUTHENTICATED\",\n  \"message\": \"Credenciais inv\\u00e1lidas.\"\n}"
+            },
+            {
+              "name": "429 RATE_LIMIT_EXCEEDED",
+              "status": "Too Many Requests",
+              "code": 429,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Retry-After",
+                  "value": "60"
+                }
+              ],
+              "body": "{\n  \"code\": \"RATE_LIMIT_EXCEEDED\",\n  \"message\": \"Too many requests.\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', ()=> pm.response.code === 200);",
+                  "const b = pm.response.json();",
+                  "pm.test('Envelope possui data', ()=> b && b.data);",
+                  "pm.test('Usuário tem email', ()=> b.data && b.data.email);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "me"
+              ]
+            },
+            "description": "Retorna o usuário autenticado."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"data\": {\n    \"id\": \"uuid\",\n    \"email\": \"owner@acme.com\",\n    \"tenant_id\": \"uuid-or-null\"\n  }\n}"
+            },
+            {
+              "name": "401 UNAUTHENTICATED",
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"code\": \"UNAUTHENTICATED\",\n  \"message\": \"N\\u00e3o autenticado.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "POST /auth/forgot",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/forgot",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "forgot"
+              ]
+            },
+            "description": "Envia email de reset (respeita tenancy do usuário).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\"\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "204 No Content",
+              "status": "No Content",
+              "code": 204,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": ""
+            },
+            {
+              "name": "429 RATE_LIMIT_EXCEEDED",
+              "status": "Too Many Requests",
+              "code": 429,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Retry-After",
+                  "value": "60"
+                }
+              ],
+              "body": "{\n  \"code\": \"RATE_LIMIT_EXCEEDED\",\n  \"message\": \"Too many requests.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "POST /auth/logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/logout",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Invalida a sessão atual."
+          },
+          "response": [
+            {
+              "name": "204 No Content",
+              "status": "No Content",
+              "code": 204,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": ""
+            },
+            {
+              "name": "401 UNAUTHENTICATED",
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"code\": \"UNAUTHENTICATED\",\n  \"message\": \"Sess\\u00e3o inv\\u00e1lida ou expirada.\"\n}"
+            },
+            {
+              "name": "429 RATE_LIMIT_EXCEEDED",
+              "status": "Too Many Requests",
+              "code": 429,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Retry-After",
+                  "value": "60"
+                }
+              ],
+              "body": "{\n  \"code\": \"RATE_LIMIT_EXCEEDED\",\n  \"message\": \"Too many requests.\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Vehicles",
+      "item": [
+        {
+          "name": "GET /vehicles",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vehicles",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vehicles"
+              ],
+              "query": [
+                {
+                  "key": "brand",
+                  "value": "Ford",
+                  "disabled": false
+                },
+                {
+                  "key": "model",
+                  "value": "Focus",
+                  "disabled": false
+                },
+                {
+                  "key": "price_min",
+                  "value": "30000",
+                  "disabled": false
+                },
+                {
+                  "key": "price_max",
+                  "value": "90000",
+                  "disabled": false
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "per_page",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Lista veículos com filtros e paginação."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Cache-Control",
+                  "value": "public, max-age=60"
+                }
+              ],
+              "body": "{\n  \"data\": [\n    {\n      \"id\": \"uuid\",\n      \"brand\": \"Ford\",\n      \"model\": \"Focus\",\n      \"price\": 45000\n    }\n  ],\n  \"meta\": {\n    \"total\": 1,\n    \"page\": 1,\n    \"per_page\": 20,\n    \"last_page\": 1\n  },\n  \"links\": {\n    \"next\": null,\n    \"prev\": null\n  }\n}"
+            },
+            {
+              "name": "429 RATE_LIMIT_EXCEEDED",
+              "status": "Too Many Requests",
+              "code": 429,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Retry-After",
+                  "value": "60"
+                }
+              ],
+              "body": "{\n  \"code\": \"RATE_LIMIT_EXCEEDED\",\n  \"message\": \"Too many requests.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "POST /vehicles",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vehicles",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vehicles"
+              ]
+            },
+            "description": "Cria um veículo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"brand\": \"Ford\",\n  \"model\": \"Focus\",\n  \"version\": \"SE 2.0\",\n  \"year\": 2020,\n  \"km\": 35000,\n  \"price\": 45000,\n  \"images\": [\n    \"https://.../foto1.jpg\"\n  ]\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "status": "Created",
+              "code": 201,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"data\": {\n    \"id\": \"uuid\",\n    \"brand\": \"Ford\",\n    \"model\": \"Focus\"\n  }\n}"
+            },
+            {
+              "name": "422 VALIDATION_ERROR",
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"code\": \"VALIDATION_ERROR\",\n  \"message\": \"Campos inv\\u00e1lidos.\",\n  \"details\": {\n    \"price\": [\n      \"O pre\\u00e7o deve ser >= 0\"\n    ]\n  }\n}"
+            },
+            {
+              "name": "429 RATE_LIMIT_EXCEEDED",
+              "status": "Too Many Requests",
+              "code": 429,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Retry-After",
+                  "value": "60"
+                }
+              ],
+              "body": "{\n  \"code\": \"RATE_LIMIT_EXCEEDED\",\n  \"message\": \"Too many requests.\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', ()=> pm.response.code === 201);",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('vehicle_id', b.data && b.data.id);",
+                  "pm.test('ID salvo', ()=> !!pm.collectionVariables.get('vehicle_id'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /vehicles/{{vehicle_id}}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vehicles/{{vehicle_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vehicles",
+                "{{vehicle_id}}"
+              ]
+            },
+            "description": "Recupera um veículo por ID."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Cache-Control",
+                  "value": "public, max-age=60"
+                }
+              ],
+              "body": "{\n  \"data\": {\n    \"id\": \"{{vehicle_id}}\",\n    \"brand\": \"Ford\",\n    \"model\": \"Focus\"\n  }\n}"
+            },
+            {
+              "name": "404 NOT_FOUND",
+              "status": "Not Found",
+              "code": 404,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"code\": \"NOT_FOUND\",\n  \"message\": \"Recurso n\\u00e3o encontrado.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "PUT /vehicles/{{vehicle_id}}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vehicles/{{vehicle_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vehicles",
+                "{{vehicle_id}}"
+              ]
+            },
+            "description": "Atualiza um veículo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 47000\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"data\": {\n    \"id\": \"{{vehicle_id}}\",\n    \"price\": 47000\n  }\n}"
+            },
+            {
+              "name": "422 VALIDATION_ERROR",
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"code\": \"VALIDATION_ERROR\",\n  \"message\": \"Campos inv\\u00e1lidos.\",\n  \"details\": {\n    \"price\": [\n      \"O pre\\u00e7o deve ser >= 0\"\n    ]\n  }\n}"
+            },
+            {
+              "name": "429 RATE_LIMIT_EXCEEDED",
+              "status": "Too Many Requests",
+              "code": 429,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Retry-After",
+                  "value": "60"
+                }
+              ],
+              "body": "{\n  \"code\": \"RATE_LIMIT_EXCEEDED\",\n  \"message\": \"Too many requests.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "DELETE /vehicles/{{vehicle_id}}",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/vehicles/{{vehicle_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "vehicles",
+                "{{vehicle_id}}"
+              ]
+            },
+            "description": "Remove um veículo."
+          },
+          "response": [
+            {
+              "name": "204 No Content",
+              "status": "No Content",
+              "code": 204,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": ""
+            },
+            {
+              "name": "429 RATE_LIMIT_EXCEEDED",
+              "status": "Too Many Requests",
+              "code": 429,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Retry-After",
+                  "value": "60"
+                }
+              ],
+              "body": "{\n  \"code\": \"RATE_LIMIT_EXCEEDED\",\n  \"message\": \"Too many requests.\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Users (Owner) — opcional",
+      "item": [
+        {
+          "name": "GET /users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/users",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "users"
+              ]
+            },
+            "description": "Lista usuários do tenant (apenas Owner)."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"data\": [\n    {\n      \"id\": \"uuid\",\n      \"email\": \"agent@acme.com\",\n      \"role\": \"AGENT\"\n    }\n  ],\n  \"meta\": {\n    \"total\": 1,\n    \"page\": 1,\n    \"per_page\": 20,\n    \"last_page\": 1\n  },\n  \"links\": {\n    \"next\": null,\n    \"prev\": null\n  }\n}"
+            },
+            {
+              "name": "403 FORBIDDEN",
+              "status": "Forbidden",
+              "code": 403,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"code\": \"FORBIDDEN\",\n  \"message\": \"Acesso negado.\"\n}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

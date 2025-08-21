@@ -1,0 +1,33 @@
+# C4 — Nível 3 (Componentes, dentro da API Laravel)
+
+Componentes:
+
+* HTTP Layer (Controllers, Middlewares)
+  - Middleware: TenantResolver (subdomínio/header), CorrelationId, EnforceJson, CORS, Throttle.
+  - Controllers: AuthController, MeController, VehiclesController.
+  - Nota: Controllers apenas orquestram chamadas; lógica de negócio fica nos Services para maior testabilidade.
+
+* Auth & RBAC
+  - Sanctum (SPA, cookies HttpOnly).
+  - Fluxo de Password Reset: email via SES/SMTP, token temporário persistido em DB, validação na troca de senha.
+  - Policies (VehiclePolicy, etc.) + Gates para papéis (superuser/owner/agent).
+  - Policies diferenciam permissões globais (superuser) vs. escopo de tenant (owners/agents).
+
+* Domain: Vehicles
+  - Services: VehicleService (regras de negócio, auditoria), ImageService (upload S3).
+  - Repository/ORM: Eloquent com Global Scope por `tenant_id`.
+  - Uploads: apenas formatos de imagem suportados (ex.: jpg/png), limite de tamanho configurável, URLs assinadas quando necessário.
+
+* Cross-cutting
+  - Validation: Form Requests.
+  - Pagination/Filters: utilitário unificado; query params → scopes; formato de resposta conforme ADR-03 (`data`, `meta`, `links`).
+  - Transformers/Resources (ex.: VehicleResource) para padronizar respostas JSON (sucesso e erro).
+  - Error Handler: formato `{code, message, details}` padronizado (ADR-03).
+  - Audit Logger: events/listeners; persistência de `created_by/updated_by/deleted_by`.
+  - Rate Limiter: segmentado; chave por tenant+user+IP (ADR-04).
+  - Observabilidade: Monolog JSON, incluindo `request_id`, `tenant_id`, `user_id`, `route`, `status`, `latency_ms`.
+
+Fluxos principais:
+* Login: AuthController → Sanctum → Cookies de sessão → MeController.
+* CRUD Vehicles: Controller → Policy → Service → Eloquent (Global Scope tenant) → RDS → Audit/Eventos → Logs.
+* Upload imagem: Controller → Policy → ImageService → S3 → URL pública/assinada (com restrições de formato/tamanho).
