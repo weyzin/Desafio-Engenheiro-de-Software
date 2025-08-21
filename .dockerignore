@@ -1,0 +1,32 @@
+# Ignora configs locais e segredos
+.env
+.env.* 
+!*.example*
+
+# Git
+.git
+.gitignore
+
+# Node (SPA)
+node_modules
+npm-debug.log
+yarn-error.log
+pnpm-lock.yaml
+
+# PHP/Laravel
+/vendor
+/storage/*.key
+/storage/logs/*
+/storage/framework/cache/*
+/storage/framework/sessions/*
+/storage/framework/views/*
+
+# IDE/OS
+.idea
+.vscode
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+Dockerfile*

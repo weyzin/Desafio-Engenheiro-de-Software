@@ -1,0 +1,202 @@
+name: laravel-react-stack
+
+networks:
+  backend:
+    driver: bridge
+    internal: true
+  frontend:
+    driver: bridge
+
+volumes:
+  app_vendor:
+  app_storage:
+  db_mysql_data:
+  db_pg_data:
+  redis_data:
+
+services:
+  # --------------------- Laravel (PHP-FPM) ---------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+      args:
+        UID: ${HOST_UID:-1000}
+        GID: ${HOST_GID:-1000}
+        COMPOSER_VERSION: "2"
+    env_file: .env.docker
+    environment:
+      DB_CONNECTION: ${DB_DRIVER:-mysql}
+    volumes:
+      - ./backend:/var/www/html
+      - app_vendor:/var/www/html/vendor
+      - app_storage:/var/www/html/storage
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "php -v >/dev/null 2>&1 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8  
+
+  # --------------------------- Nginx ---------------------------
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web   # << dentro de build
+    depends_on:
+      app:
+        condition: service_started
+    ports:
+      - "8080:80"
+    volumes:
+      - ./backend:/var/www/html:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+    networks:
+      - frontend
+      - backend
+
+  # --------------------------- Redis ---------------------------
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+
+  # ----------------------- Queue (Horizon) ---------------------
+  queue:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    env_file: .env.docker
+    command: ["php", "artisan", "horizon"]
+    depends_on:
+      app:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/var/www/html
+      - app_vendor:/var/www/html/vendor
+      - app_storage:/var/www/html/storage
+    networks:
+      - backend
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8 
+
+  # ---------------------------- Mail ---------------------------
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - "8025:8025"
+    networks:
+      - backend
+
+  # ---------------------------- MySQL --------------------------
+  db-mysql:
+    image: mysql:8.0
+    command: ["--default-authentication-plugin=mysql_native_password"]
+    env_file: .env.docker
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+    volumes:
+      - db_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u${DB_USERNAME} -p${DB_PASSWORD} --silent"]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+    networks:
+      backend:
+        aliases: ["db"]
+
+  # -------------------------- PostgreSQL -----------------------
+  db-pg:
+    image: postgres:15-alpine
+    env_file: .env.docker
+    environment:
+      POSTGRES_DB: ${DB_DATABASE}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - db_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_DATABASE}"]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+    networks:
+      backend:
+        aliases: ["db"]
+    profiles: ["pgsql"]
+
+  # --------------------------- phpMyAdmin -----------------------
+  phpmyadmin:
+    image: phpmyadmin:5-apache
+    environment:
+      PMA_HOST: db
+      PMA_USER: ${DB_USERNAME}
+      PMA_PASSWORD: ${DB_PASSWORD}
+    depends_on:
+      - db-mysql
+    ports:
+      - "8081:80"
+    networks:
+      - backend
+      - frontend
+    profiles: ["tools","mysql"]
+
+  # ---------------------------- pgAdmin ------------------------
+  pgadmin:
+    image: dpage/pgadmin4:8
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+    depends_on:
+      - db-pg
+    ports:
+      - "8082:80"
+    networks:
+      - backend
+      - frontend
+    profiles: ["tools","pgsql"]
+
+  # --------------------- Node (Vite dev server) ----------------
+  node:
+    build:
+      context: ./frontend
+      dockerfile: ../Dockerfile.node
+    env_file: .env.docker
+    working_dir: /usr/src/app
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0 --port 5173"
+    volumes:
+      - ./frontend:/usr/src/app
+    ports:
+      - "5173:5173"
+    networks:
+      - frontend
+      - backend
+    profiles: ["spa"]
