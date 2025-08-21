@@ -1,15 +1,12 @@
-# MVP — Arquitetura AWS
-
-```mermaid
 flowchart TB
-    User[Usuário / Postman] -->|HTTP/HTTPS| CF[CloudFront (opcional)]
-    CF --> EB[Elastic Beanstalk (Laravel API)]
+    User[Usuário / Postman] -->|HTTPS| CF[CloudFront (opcional)]
+    CF --> EB[Elastic Beanstalk - Laravel API]
 
-    EB --> RDS[(RDS Single-AZ Postgres/MySQL)]
+    EB --> RDS[(RDS Single-AZ Postgres ou MySQL)]
     EB --> Redis[(ElastiCache Redis)]
-    EB --> S3[(S3 - Imagens de veículos)]
-    EB --> SES[(SES - Emails)]
-    EB --> CW[CloudWatch - Logs/Métricas]
+    EB --> S3[(S3 - imagens de veículos)]
+    EB --> SES[(SES - e-mails)]
+    EB --> CW[CloudWatch - logs e métricas]
 
     RDS --> CW
     Redis --> CW
