@@ -119,13 +119,13 @@ Inclui exemplos de erros: `401`, `403`, `404`, `422`, `429`.
 
 ## 📚 Documentação Relacionada
 
-- [ADR](./docs/ADR/) — Decisões arquiteturais
-- [Architecture](./docs/Architecture/) — Diagramas e visão técnica
-- [Database](./docs/Database/) — Migrations e seeds
-- [Operations](./docs/Operations/) — Runbooks, custos e tenancy
-- [Security](./docs/Security/) — Checklist AppSec, catálogos de erro, versionamento
-- [Testing](./docs/Testing/) — Coleções Postman e OpenAPI
-- [Scope.md](./docs/scope.md) — Escopo funcional do MVP
+- [ADR](.desafio/docs/ADR/) — Decisões arquiteturais
+- [Architecture](.desafio/docs/Architecture/) — Diagramas e visão técnica
+- [Database](.desafio/docs/Database/) — Migrations e seeds
+- [Operations](.desafio/docs/Operations/) — Runbooks, custos e tenancy
+- [Security](.desafio/docs/Security/) — Checklist AppSec, catálogos de erro, versionamento
+- [Testing](.desafio/docs/Testing/) — Coleções Postman e OpenAPI
+- [Scope.md](.desafio/docs/scope.md) — Escopo funcional do MVP
 
 ---
 
