@@ -3,12 +3,11 @@ name: laravel-react-stack
 networks:
   backend:
     driver: bridge
-    internal: true
+    #internal: true
   frontend:
     driver: bridge
 
 volumes:
-  app_vendor:
   app_storage:
   db_mysql_data:
   db_pg_data:
@@ -29,7 +28,6 @@ services:
       DB_CONNECTION: ${DB_DRIVER:-mysql}
     volumes:
       - ./backend:/var/www/html
-      - app_vendor:/var/www/html/vendor
       - app_storage:/var/www/html/storage
     depends_on:
       redis:
@@ -96,7 +94,6 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/var/www/html
-      - app_vendor:/var/www/html/vendor
       - app_storage:/var/www/html/storage
     networks:
       - backend
@@ -108,7 +105,7 @@ services:
   mailhog:
     image: mailhog/mailhog:latest
     ports:
-      - "127.0.0.1:8025:8025"
+      - "8025:8025"
     networks:
       - frontend
       - backend
