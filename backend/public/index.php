@@ -5,51 +5,46 @@ use Illuminate\Http\Request;
 
 define('LARAVEL_START', microtime(true));
 
-/*
-|--------------------------------------------------------------------------
-| Check If The Application Is Under Maintenance
-|--------------------------------------------------------------------------
-|
-| If the application is in maintenance / demo mode via the "down" command
-| we will load this file so that any pre-rendered content can be shown
-| instead of starting the framework, which could cause an exception.
-|
-*/
-
 if (file_exists($maintenance = __DIR__.'/../storage/framework/maintenance.php')) {
     require $maintenance;
 }
 
-/*
-|--------------------------------------------------------------------------
-| Register The Auto Loader
-|--------------------------------------------------------------------------
-|
-| Composer provides a convenient, automatically generated class loader for
-| this application. We just need to utilize it! We'll simply require it
-| into the script here so we don't need to manually load our classes.
-|
-*/
+// mata compressão e buffers antes de tudo
+@ini_set('zlib.output_compression', '0');
+@ini_set('output_handler', '');
+if (function_exists('header_remove')) { @header_remove('Content-Encoding'); }
+while (function_exists('ob_get_level') && ob_get_level() > 0) { @ob_end_clean(); }
+if (!headers_sent()) { header('Content-Encoding: identity'); header('Vary: Accept-Encoding'); }
 
 require __DIR__.'/../vendor/autoload.php';
 
-/*
-|--------------------------------------------------------------------------
-| Run The Application
-|--------------------------------------------------------------------------
-|
-| Once we have the application, we can handle the incoming request using
-| the application's HTTP kernel. Then, we will send the response back
-| to this client's browser, allowing them to enjoy our application.
-|
-*/
-
-$app = require_once __DIR__.'/../bootstrap/app.php';
-
+$app    = require_once __DIR__.'/../bootstrap/app.php';
 $kernel = $app->make(Kernel::class);
 
-$response = $kernel->handle(
-    $request = Request::capture()
-)->send();
+$request  = Request::capture();
+$response = $kernel->handle($request);   // <-- NÃO chamar send ainda
 
+// DESCOMPACTA se veio comprimido
+$body = $response->getContent();
+if (is_string($body) && strlen($body) > 2) {
+    $prefix  = substr($body, 0, 2);
+    $decoded = false;
+
+    if ($prefix === "\x1f\x8b") {                 // gzip
+        $decoded = @gzdecode($body);
+    } elseif (in_array($prefix, ["\x78\x01","\x78\x9c","\x78\xda"], true)) { // zlib/deflate
+        $decoded = @gzinflate(substr($body, 2));
+    } else {
+        $try = @gzdecode($body);
+        if ($try !== false) $decoded = $try;
+    }
+
+    if ($decoded !== false && $decoded !== '') {
+        $response->setContent($decoded);
+        $response->headers->remove('Content-Encoding');
+        $response->headers->set('Vary', 'Accept-Encoding');
+    }
+}
+
+$response->send();                     // <-- só agora envia
 $kernel->terminate($request, $response);
