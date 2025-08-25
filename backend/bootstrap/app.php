@@ -1,10 +1,6 @@
 <?php
 
-use Illuminate\Foundation\Application;
-use Illuminate\Foundation\Configuration\Exceptions;
-use Illuminate\Foundation\Configuration\Middleware;
-use App\Http\Middleware\RequestId;
-use App\Http\Middleware\TenantResolver;
+use Illuminate\Http\Middleware\HandleCors;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -14,17 +10,15 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        // Aliases reutilizáveis nas rotas/api
         $middleware->alias([
-            'request.id' => RequestId::class,
-            'tenant'     => TenantResolver::class,
+            'request.id'   => \App\Http\Middleware\RequestId::class,
+            'tenant'       => \App\Http\Middleware\TenantResolver::class,
             'auth.sanctum' => \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
         ]);
 
-        // JSON por padrão nas rotas da API (opcional)
-        // $middleware->append(App\Http\Middleware\ForceJson::class);
+        // Garantir CORS global (opcional se já vier no preset)
+        $middleware->append(HandleCors::class);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        // Handler padrão já cuidará dos mapeamentos;
-        // detalhes serão tratados no Handler (padrão de erros do catálogo).
+        //
     })->create();
