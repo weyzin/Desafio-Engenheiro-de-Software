@@ -11,8 +11,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // garante 1 única instância do gerenciador por request/teste
+        $this->app->singleton(\App\Support\Tenancy\TenantManager::class, function () {
+            return new \App\Support\Tenancy\TenantManager();
+        });
     }
+
 
     /**
      * Bootstrap any application services.

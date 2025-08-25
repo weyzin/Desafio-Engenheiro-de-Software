@@ -26,4 +26,10 @@ class VehicleResource extends JsonResource
             'deleted_at' => optional($this->deleted_at)->toIso8601String(),
         ];
     }
+
+    public function withResponse($request, $response)
+    {
+        // Preserva zeros fracionários em floats (ex.: 47000.0)
+        $response->setEncodingOptions($response->getEncodingOptions() | JSON_PRESERVE_ZERO_FRACTION);
+    }
 }

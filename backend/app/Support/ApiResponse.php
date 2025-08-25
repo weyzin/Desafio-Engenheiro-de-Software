@@ -3,31 +3,64 @@
 namespace App\Support;
 
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Contracts\Pagination\Paginator;
+use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Http\JsonResponse;
+use JsonSerializable;
 
-class ApiResponse
+final class ApiResponse
 {
-    public static function item(array|\JsonSerializable|object $resource, int $status = 200): JsonResponse
+    /**
+     * Retorna { "data": ... }
+     */
+    public static function item(array|Arrayable|JsonSerializable $resource, int $status = 200): JsonResponse
     {
+        if ($resource instanceof Arrayable) {
+            $resource = $resource->toArray();
+        }
+
         return response()->json(['data' => $resource], $status);
     }
 
-    public static function collection(LengthAwarePaginator $paginator): JsonResponse
+    /**
+     * Retorna { "data": [...], "meta": {...}, "links": {...} }
+     */
+    public static function paginated(LengthAwarePaginator|Paginator $paginator, int $status = 200): JsonResponse
     {
-        $meta = [
-            'total'     => $paginator->total(),
-            'page'      => $paginator->currentPage(),
-            'per_page'  => $paginator->perPage(),
-            'last_page' => $paginator->lastPage(),
+        $collection = $paginator->getCollection();
+        $data = $collection instanceof Arrayable ? $collection->toArray() : $collection->all();
+
+        $payload = [
+            'data' => $data,
+            'meta' => [
+                'current_page' => method_exists($paginator, 'currentPage') ? $paginator->currentPage() : null,
+                'from'        => $paginator->firstItem(),
+                'last_page'   => method_exists($paginator, 'lastPage') ? $paginator->lastPage() : null,
+                'path'        => $paginator->path(),
+                'per_page'    => $paginator->perPage(),
+                'to'          => $paginator->lastItem(),
+                'total'       => $paginator->total(),
+            ],
+            'links' => [
+                'first' => $paginator->url(1),
+                'last'  => method_exists($paginator, 'lastPage') ? $paginator->url($paginator->lastPage()) : null,
+                'prev'  => $paginator->previousPageUrl(),
+                'next'  => $paginator->nextPageUrl(),
+            ],
         ];
-        $links = [
-            'next' => $paginator->nextPageUrl(),
-            'prev' => $paginator->previousPageUrl(),
-        ];
-        return response()->json([
-            'data'  => $paginator->items(),
-            'meta'  => $meta,
-            'links' => $links,
-        ]);
+
+        return response()->json($payload, $status);
+    }
+
+    /**
+     * Retorna erro padronizado { "code": "...", "message": "...", "errors"?: {...} }
+     */
+    public static function error(string $code, string $message, array $errors = [], int $status = 400): JsonResponse
+    {
+        $body = ['code' => $code, 'message' => $message];
+        if ($errors !== []) {
+            $body['errors'] = $errors;
+        }
+        return response()->json($body, $status);
     }
 }

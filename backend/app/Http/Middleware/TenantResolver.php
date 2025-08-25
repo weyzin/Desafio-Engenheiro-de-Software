@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use App\Support\Tenancy\TenantManager;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -14,38 +15,73 @@ class TenantResolver
 
     public function handle(Request $request, Closure $next)
     {
-        $host = strtolower($request->getHost());
+        $host    = strtolower($request->getHost());
+        $rid     = $request->attributes->get('request_id') ?? $request->headers->get('X-Request-Id');
+        $xTenant = $request->headers->get('X-Tenant');
+        $allows  = $this->tm->allowsHeaderInThisEnv();
+        $env     = app()->environment();
+        $inCli   = app()->runningInConsole();
 
-        // 1) Domínio customizado
-        if (!$this->tm->current() && ($t = $this->tm->byDomain($host))) {
-            $this->tm->set($t);
-        }
+        Log::info('tenancy.resolve.start', [
+            'request_id' => $rid,
+            'rid'        => $rid,
+            'path'       => ltrim($request->path(), '/'),
+            'host'       => $host,
+            'x_tenant'   => $xTenant,
+            'allowsHdr'  => $allows,
+            'env'        => $env,
+            'in_console' => $inCli,
+        ]);
 
-        // 2) Subdomínio padrão
-        if (!$this->tm->current() && ($t = $this->tm->bySubdomain($host))) {
-            $this->tm->set($t);
-        }
+        // Sempre propaga o tenant resolvido p/ a Request
+        $setRequestTenant = function ($tenant) use ($request) {
+            if ($tenant) {
+                $request->attributes->set('tenant_id', $tenant->id);
+                $request->attributes->set('tenant_slug', $tenant->slug ?? null);
+            }
+        };
 
-        // 3) Fallback: X-Tenant apenas em dev/admin
-        if (!$this->tm->current() && $this->tm->allowsHeaderInThisEnv()) {
-            if ($request->hasHeader('X-Tenant')) {
-                $slug = strtolower($request->header('X-Tenant'));
-                if ($t = $this->tm->bySlug($slug)) {
-                    $this->tm->set($t);
-                } else {
-                    // Tenant inexistente → 404 para não vazar existência
-                    throw new NotFoundHttpException('NOT_FOUND');
-                }
+        $resolved = null;
+
+        // 1) Header tem prioridade quando permitido — e deve sobrescrever o tenant atual
+        if ($allows && $request->hasHeader('X-Tenant')) {
+            $slug = strtolower($request->header('X-Tenant'));
+            if ($t = $this->tm->bySlug($slug)) {
+                $resolved = $t;
+                Log::info('tenancy.resolve.header.ok', ['rid' => $rid, 'tenant' => $t->slug]);
             } else {
-                // Em dev/admin, X-Tenant ausente pode ser 400 explícito
-                throw new BadRequestHttpException('TENANT_HEADER_REQUIRED');
+                Log::notice('tenancy.resolve.header.unknown', ['rid' => $rid, 'slug' => $slug]);
+                throw new NotFoundHttpException('NOT_FOUND');
             }
         }
 
-        if (!$this->tm->current()) {
-            // Produção sem resolução por domínio/subdomínio → 404
+        // 2) Domínio customizado (se nada foi resolvido pelo header)
+        if (!$resolved && ($t = $this->tm->byDomain($host))) {
+            $resolved = $t;
+            Log::info('tenancy.resolve.domain.ok', ['rid' => $rid, 'tenant' => $t->slug]);
+        }
+
+        // 3) Subdomínio (slug.dominio.com) (se ainda não resolveu)
+        if (!$resolved && ($t = $this->tm->bySubdomain($host))) {
+            $resolved = $t;
+            Log::info('tenancy.resolve.subdomain.ok', ['rid' => $rid, 'tenant' => $t->slug]);
+        }
+
+        // 4) Caso não resolva:
+        if (!$resolved) {
+            if ($allows) {
+                // Em dev/testing/CLI sem domínio resolvido, exigimos o header
+                Log::notice('tenancy.resolve.header.required', ['rid' => $rid]);
+                throw new BadRequestHttpException('TENANT_HEADER_REQUIRED');
+            }
+            // Em produção, sem domínio/subdomínio resolvido → 404
+            Log::warning('tenancy.resolve.missing', ['rid' => $rid, 'host' => $host]);
             throw new NotFoundHttpException('NOT_FOUND');
         }
+
+        // Define no manager (sobrescrevendo, se necessário) e propaga na Request
+        $this->tm->set($resolved);
+        $setRequestTenant($resolved);
 
         return $next($request);
     }

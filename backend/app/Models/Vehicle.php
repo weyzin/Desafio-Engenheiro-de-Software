@@ -15,6 +15,7 @@ class Vehicle extends Model
     ];
 
     protected $casts = [
+        'price'       => 'float',
         'images_json' => 'array',
         'created_at'  => 'datetime',
         'updated_at'  => 'datetime',

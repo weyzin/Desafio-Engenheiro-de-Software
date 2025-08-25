@@ -2,87 +2,136 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\Auth\LoginRequest;
-use App\Support\ApiResponse;
+use App\Models\User;
+use App\Support\Tenancy\TenantManager;
 use Illuminate\Http\Request;
-use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Password;
 
 class AuthController extends Controller
 {
-    public function login(LoginRequest $request)
+    /** Log padronizado com request id, rota e tenant */
+    private function flog(string $event, array $ctx = [], string $level = 'info'): void
     {
-        // Sanctum SPA: cookies HttpOnly + CSRF (XSRF-TOKEN)
-        $credentials = $request->only(['email','password']);
-
-        if (!Auth::attempt($credentials, true)) {
-            // 401 UNAUTHORIZED (OpenAPI usa "UNAUTHORIZED" para login inválido)
-            return response()->json([
-                'code'    => 'UNAUTHORIZED',
-                'message' => 'Credenciais inválidas.',
-            ], 401);
+        try {
+            $rid = request()->attributes->get('rid') ?? request()->header('X-Request-Id');
+        } catch (\Throwable) {
+            $rid = null;
         }
 
-        $user = $request->user();
-        $user->forceFill(['last_login_at' => now()])->save();
+        $base = [
+            'request_id' => $rid,
+            'rid'        => $rid,
+            'path'       => request()->path(),
+        ];
 
-        Log::info('auth.login', [
-            'user_id'   => $user->id,
-            'tenant_id' => $user->tenant_id,
+        // anexa tenant atual se disponível
+        try {
+            $tm = app(TenantManager::class);
+            $base['tenant'] = $tm?->id();
+        } catch (\Throwable) {
+            // ignore
+        }
+
+        Log::log($level, $event, array_merge($base, $ctx));
+    }
+
+    /** POST /api/v1/auth/login */
+    public function login(Request $request, TenantManager $tm)
+    {
+        $data = $request->validate([
+            'email'    => ['required','email'],
+            'password' => ['required','string'],
         ]);
 
-        // Envelope { data: User }
-        return ApiResponse::item([
-            'id'        => $user->id,
-            'name'      => $user->name,
-            'email'     => $user->email,
-            'role'      => $user->role,
-            'tenant_id' => $user->tenant_id,
+        $tenantId = $tm->id();
+        $this->flog('auth.login.start', ['email' => $data['email'], 'tenant_id' => $tenantId]);
+
+        // Busca usuário escopado ao tenant atual (TenantScope cuida do where tenant_id)
+        $user = User::where('email', $data['email'])->first(['id','email','password','role','tenant_id']);
+
+        if (! $user) {
+            $this->flog('auth.login.user_not_found', ['email' => $data['email']]);
+            return response()->json(['code' => 'INVALID_CREDENTIALS'], 401);
+        }
+
+        // Segurança extra: bater o tenant explicitamente
+        if ($user->tenant_id !== $tenantId) {
+            $this->flog('auth.login.tenant_mismatch', [
+                'email' => $data['email'],
+                'user_tid' => $user->tenant_id,
+                'current_tid' => $tenantId,
+            ], 'warning');
+
+            // Para não vazar informação, trate como credencial inválida
+            return response()->json(['code' => 'INVALID_CREDENTIALS'], 401);
+        }
+
+        $hashOk = Hash::check($data['password'], $user->password);
+        $this->flog('auth.login.hash_check', ['ok' => $hashOk, 'uid' => $user->id]);
+
+        if (! $hashOk) {
+            return response()->json(['code' => 'INVALID_CREDENTIALS'], 401);
+        }
+
+        // Autentica via sessão (middleware de sessão já está no pipeline)
+        Auth::login($user, false);
+        $request->session()->regenerate();
+
+        $this->flog('auth.login.ok', ['uid' => $user->id]);
+
+        return response()->json([
+            'data' => [
+                'id'        => $user->id,
+                'email'     => $user->email,
+                'role'      => $user->role,
+                'tenant_id' => $user->tenant_id,
+            ],
         ], 200);
     }
 
+    /** GET /api/v1/me (autenticado) */
     public function me(Request $request)
     {
-        $u = $request->user();
-        return ApiResponse::item([
-            'id'        => $u->id,
-            'name'      => $u->name,
-            'email'     => $u->email,
-            'role'      => $u->role,
-            'tenant_id' => $u->tenant_id,
-        ], 200)->header('Cache-Control', 'public, max-age=60');
-    }
-
-    public function logout(Request $request)
-    {
-        Auth::guard('web')->logout();
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
-
-        Log::info('auth.logout', [
-            'user_id'   => $request->user()?->id,
-            'tenant_id' => $request->user()?->tenant_id,
-        ]);
-
-        return response()->noContent(); // 204
-    }
-
-    public function forgot(Request $request)
-    {
-        $request->validate(['email' => ['required','email','max:254']]);
-
-        // Idempotente: sempre retornamos 200 com mensagem genérica
-        // (Podemos disparar o broker de reset; no MVP, apenas demo)
-        try {
-            Password::broker()->sendResetLink(['email' => $request->input('email')]);
-        } catch (\Throwable $e) {
-            // Silencia para manter idempotência
+        $u = Auth::user();
+        if (! $u) {
+            return response()->json(['code' => 'UNAUTHENTICATED'], 401);
         }
 
         return response()->json([
-            'message' => 'Se este e-mail existir, a recuperação será enviada.',
+            'data' => [
+                'id'        => $u->id,
+                'email'     => $u->email,
+                'role'      => $u->role,
+                'tenant_id' => $u->tenant_id,
+            ],
+        ], 200);
+    }
+
+    /** POST /api/v1/auth/logout (autenticado) */
+    public function logout(Request $request)
+    {
+        $u = Auth::user();
+        $this->flog('auth.logout.start', ['uid' => $u?->id]);
+
+        Auth::logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        $this->flog('auth.logout.ok');
+
+        return response()->noContent();
+    }
+
+    /** POST /api/v1/auth/forgot — simples/idempotente */
+    public function forgot(Request $request)
+    {
+        $email = (string) $request->input('email');
+        $this->flog('auth.forgot', ['email' => $email]);
+
+        return response()->json([
+            'message' => 'If the email exists, we will send reset instructions.',
         ], 200);
     }
 }

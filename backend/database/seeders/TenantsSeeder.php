@@ -3,29 +3,28 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 
 class TenantsSeeder extends Seeder
 {
     public function run(): void
     {
-        $now = now()->toDateTimeString();
+        // limpa de forma segura (respeitando FKs)
+        DB::table('tenant_domains')->delete();
+        DB::table('tenants')->delete();
 
-        // Tenants
+        // IDs fixos para ficarem estáveis em testes
+        $acme   = '11111111-1111-1111-1111-111111111111';
+        $globex = '22222222-2222-2222-2222-222222222222';
+
         DB::table('tenants')->insert([
-            ['id' => (string) Str::uuid(), 'name' => 'Acme Inc',   'created_at'=>$now,'updated_at'=>$now, 'slug'=>'acme'],
-            ['id' => (string) Str::uuid(), 'name' => 'Globex LLC', 'created_at'=>$now,'updated_at'=>$now, 'slug'=>'globex'],
+            ['id' => $acme,   'name' => 'ACME Inc.',  'slug' => 'acme',   'created_at'=>now(),'updated_at'=>now()],
+            ['id' => $globex, 'name' => 'Globex LLC', 'slug' => 'globex', 'created_at'=>now(),'updated_at'=>now()],
         ]);
 
-        // Domains (opcional)
-        $tenants = DB::table('tenants')->get(['id','name','slug']);
-        foreach ($tenants as $t) {
-            DB::table('tenant_domains')->insert([
-                'tenant_id' => $t->id,
-                'domain'    => $t->slug.'.local.test',
-                'created_at'=> $now,
-            ]);
-        }
+        DB::table('tenant_domains')->insert([
+            ['tenant_id' => $acme,   'domain' => 'acme.localhost',   'created_at'=>now(),'updated_at'=>now()],
+            ['tenant_id' => $globex, 'domain' => 'globex.localhost', 'created_at'=>now(),'updated_at'=>now()],
+        ]);
     }
 }
