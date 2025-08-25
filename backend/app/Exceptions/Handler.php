@@ -2,93 +2,97 @@
 
 namespace App\Exceptions;
 
+use Throwable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
 use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Validation\ValidationException;
-use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
+use Illuminate\Session\TokenMismatchException;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
-use Throwable;
 
 class Handler extends ExceptionHandler
 {
-    /**
-     * Garante o shape do 422 para APIs.
-     */
-    protected function invalidJson($request, ValidationException $exception)
-    {
-        return response()->json([
-            'code'    => 'VALIDATION_ERROR',
-            'message' => $exception->getMessage(),
-            'errors'  => $exception->errors(),
-        ], $exception->status);
-    }
+    protected $levels = [
+        //
+    ];
+
+    protected $dontReport = [
+        //
+    ];
+
+    protected $dontFlash = [
+        'current_password',
+        'password',
+        'password_confirmation',
+    ];
 
     public function register(): void
     {
-        // 422 (fallback caso não passe pelo invalidJson)
-        $this->renderable(function (ValidationException $e, $request) {
-            return response()->json([
-                'code'    => 'VALIDATION_ERROR',
-                'message' => $e->getMessage(),
-                'errors'  => $e->errors(),
-            ], 422);
-        });
+        //
+    }
 
-        // 401
-        $this->renderable(function (AuthenticationException $e, $request) {
-            return response()->json([
-                'code'    => 'UNAUTHENTICATED',
-                'message' => 'Sessão inválida ou token ausente/expirado.',
-            ], 401);
-        });
+    protected function wantsJson($request): bool
+    {
+        return $request->expectsJson() || $request->is('api/*');
+    }
 
-        // 403
-        $this->renderable(function (AuthorizationException $e, $request) {
-            return response()->json([
-                'code'    => 'FORBIDDEN',
-                'message' => 'Acesso negado.',
-            ], 403);
-        });
+    public function render($request, Throwable $e)
+    {
+        if (! $this->wantsJson($request)) {
+            return parent::render($request, $e);
+        }
 
-        // 400 (inclui TENANT_HEADER_REQUIRED)
-        $this->renderable(function (BadRequestHttpException $e, $request) {
-            $code    = $e->getMessage() === 'TENANT_HEADER_REQUIRED' ? 'TENANT_HEADER_REQUIRED' : 'BAD_REQUEST';
-            $message = $e->getMessage() === 'TENANT_HEADER_REQUIRED'
-                ? 'X-Tenant ausente em ambiente de desenvolvimento.'
-                : 'Requisição malformada ou parâmetros inválidos.';
-            return response()->json(['code' => $code, 'message' => $message], 400);
-        });
+        $rid = $request->headers->get('X-Request-Id') ?? $request->attributes->get('request_id');
 
-        // 404 (inclui ModelNotFound)
-        $this->renderable(function (NotFoundHttpException|ModelNotFoundException $e, $request) {
-            return response()->json([
-                'code'    => 'NOT_FOUND',
-                'message' => 'Recurso não encontrado.',
-            ], 404);
-        });
+        $reply = function (int $status, string $code, string $message, array $extra = []) use ($rid) {
+            $payload = array_merge(['code' => $code, 'message' => $message], $extra);
+            $resp = response()->json($payload, $status);
+            if ($rid) $resp->headers->set('X-Request-Id', $rid);
+            return $resp;
+        };
 
-        // 429
-        $this->renderable(function (ThrottleRequestsException $e, $request) {
-            $retry = (string)($e->getHeaders()['Retry-After'] ?? 60);
-            return response()->json([
-                'code'    => 'RATE_LIMIT_EXCEEDED',
-                'message' => 'Muitas requisições. Tente novamente mais tarde.',
-            ], 429)->header('Retry-After', $retry);
-        });
+        // Mapeamento amigável
+        if ($e instanceof AuthenticationException) {
+            return $reply(401, 'UNAUTHENTICATED', 'Não autenticado.');
+        }
 
-        // 500
-        $this->renderable(function (Throwable $e, $request) {
-            if ($e instanceof HttpExceptionInterface) {
-                return null;
-            }
-            return response()->json([
-                'code'    => 'INTERNAL_SERVER_ERROR',
-                'message' => 'Erro inesperado. Tente novamente mais tarde.',
-            ], 500);
-        });
+        if ($e instanceof AuthorizationException) {
+            return $reply(403, 'FORBIDDEN', 'Acesso negado.');
+        }
+
+        if ($e instanceof ValidationException) {
+            return $reply(422, 'VALIDATION_ERROR', 'Erro de validação.', [
+                'errors' => $e->errors(),
+            ]);
+        }
+
+        if ($e instanceof TokenMismatchException) {
+            return $reply(419, 'CSRF_TOKEN_MISMATCH', 'Token CSRF inválido ou ausente.');
+        }
+
+        if ($e instanceof ModelNotFoundException || $e instanceof NotFoundHttpException) {
+            return $reply(404, 'NOT_FOUND', 'Recurso não encontrado.');
+        }
+
+        if ($e instanceof MethodNotAllowedHttpException) {
+            return $reply(405, 'METHOD_NOT_ALLOWED', 'Método não permitido.');
+        }
+
+        if ($e instanceof ThrottleRequestsException) {
+            return $reply(429, 'TOO_MANY_REQUESTS', 'Muitas requisições.');
+        }
+
+        if ($e instanceof BadRequestHttpException) {
+            $msg = $e->getMessage() ?: 'Requisição inválida.';
+            $code = $msg === 'TENANT_HEADER_REQUIRED' ? 'TENANT_HEADER_REQUIRED' : 'BAD_REQUEST';
+            return $reply(400, $code, $msg);
+        }
+
+        // Fallback
+        return $reply(500, 'INTERNAL_SERVER_ERROR', 'Erro inesperado. Tente novamente mais tarde.');
     }
 }

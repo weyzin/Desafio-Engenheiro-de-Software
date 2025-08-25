@@ -12,9 +12,15 @@ Route::middleware(['api', 'request.id', 'tenant'])
         Route::post('auth/login',  [AuthController::class, 'login']);
         Route::post('auth/forgot', [AuthController::class, 'forgot']);
 
-        // /me SEM auth (tenant valida primeiro; em dev sem X-Tenant → 400)
+        // /me (sem auth): retorna 401 se não estiver logado
         Route::get('me', function (Request $request) {
-            $u = $request->user(); // estará preenchido após login
+            $u = $request->user();
+            if (!$u) {
+                return response()->json([
+                    'code'    => 'UNAUTHENTICATED',
+                    'message' => 'Não autenticado.',
+                ], 401);
+            }
             return response()->json([
                 'data' => [
                     'id'        => $u->id,
