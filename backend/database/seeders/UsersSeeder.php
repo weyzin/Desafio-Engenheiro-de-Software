@@ -21,7 +21,7 @@ class UsersSeeder extends Seeder
             'tenant_id'  => null,
             'name'       => 'Root Admin',
             'email'      => 'admin@root.com',
-            'password'   => Hash::make('Password!123'), // <<< AQUI
+            'password'   => Hash::make('Password!123'), 
             'role'       => 'superuser',
             'created_at' => $now, 
             'updated_at' => $now,
@@ -32,7 +32,7 @@ class UsersSeeder extends Seeder
             'tenant_id'  => $acmeId,
             'name'       => 'Acme Owner',
             'email'      => 'owner@acme.com',
-            'password'   => Hash::make('Password!123'), // <<< AQUI
+            'password'   => Hash::make('Password!123'), 
             'role'       => 'owner',
             'created_at' => $now, 
             'updated_at' => $now,
@@ -41,7 +41,7 @@ class UsersSeeder extends Seeder
             'tenant_id'  => $acmeId,
             'name'       => 'Acme Agent',
             'email'      => 'agent@acme.com',
-            'password'   => Hash::make('Password!123'), // <<< AQUI
+            'password'   => Hash::make('Password!123'), 
             'role'       => 'agent',
             'created_at' => $now, 
             'updated_at' => $now,
@@ -52,7 +52,7 @@ class UsersSeeder extends Seeder
             'tenant_id'  => $globexId,
             'name'       => 'Globex Owner',
             'email'      => 'owner@globex.com',
-            'password'   => Hash::make('Password!123'), // <<< AQUI
+            'password'   => Hash::make('Password!123'), 
             'role'       => 'owner',
             'created_at' => $now, 
             'updated_at' => $now,
@@ -61,7 +61,7 @@ class UsersSeeder extends Seeder
             'tenant_id'  => $globexId,
             'name'       => 'Globex Agent',
             'email'      => 'agent@globex.com',
-            'password'   => Hash::make('Password!123'), // <<< AQUI
+            'password'   => Hash::make('Password!123'), 
             'role'       => 'agent',
             'created_at' => $now, 
             'updated_at' => $now,

@@ -5,13 +5,11 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use App\Support\Tenancy\TenantManager;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 
 class AuthController extends Controller
 {
-    /** Log padronizado com request id, rota e tenant */
     private function flog(string $event, array $ctx = [], string $level = 'info'): void
     {
         try {
@@ -20,24 +18,16 @@ class AuthController extends Controller
             $rid = null;
         }
 
-        $base = [
-            'request_id' => $rid,
-            'rid'        => $rid,
-            'path'       => request()->path(),
-        ];
-
-        // anexa tenant atual se disponível
+        $base = ['request_id' => $rid, 'rid' => $rid, 'path' => request()->path()];
         try {
             $tm = app(TenantManager::class);
             $base['tenant'] = $tm?->id();
-        } catch (\Throwable) {
-            // ignore
-        }
+        } catch (\Throwable) { /* ignore */ }
 
         Log::log($level, $event, array_merge($base, $ctx));
     }
 
-    /** POST /api/v1/auth/login */
+    /** POST /api/v1/auth/login — stateless (Sanctum token) */
     public function login(Request $request, TenantManager $tm)
     {
         $data = $request->validate([
@@ -45,56 +35,63 @@ class AuthController extends Controller
             'password' => ['required','string'],
         ]);
 
-        $tenantId = $tm->id();
+        $tenantId = $tm->id(); // pode ser null se frontend não mandou X-Tenant
         $this->flog('auth.login.start', ['email' => $data['email'], 'tenant_id' => $tenantId]);
 
-        // Busca usuário escopado ao tenant atual (TenantScope cuida do where tenant_id)
-        $user = User::where('email', $data['email'])->first(['id','email','password','role','tenant_id']);
+        $user = User::where('email', $data['email'])
+            ->first(['id','email','password','role','tenant_id','name']);
 
         if (! $user) {
             $this->flog('auth.login.user_not_found', ['email' => $data['email']]);
             return response()->json(['code' => 'INVALID_CREDENTIALS'], 401);
         }
 
-        // Segurança extra: bater o tenant explicitamente
-        if ($user->tenant_id !== $tenantId) {
+        // 🔒 Tenant match (apenas se header presente)
+        // Se o frontend NÃO enviar X-Tenant, não bloqueamos o login aqui.
+        if ($tenantId && $user->tenant_id !== $tenantId) {
             $this->flog('auth.login.tenant_mismatch', [
-                'email' => $data['email'],
-                'user_tid' => $user->tenant_id,
+                'email'       => $data['email'],
+                'user_tid'    => $user->tenant_id,
                 'current_tid' => $tenantId,
             ], 'warning');
-
-            // Para não vazar informação, trate como credencial inválida
             return response()->json(['code' => 'INVALID_CREDENTIALS'], 401);
         }
 
-        $hashOk = Hash::check($data['password'], $user->password);
-        $this->flog('auth.login.hash_check', ['ok' => $hashOk, 'uid' => $user->id]);
-
-        if (! $hashOk) {
+        if (! Hash::check($data['password'], $user->password)) {
+            $this->flog('auth.login.bad_password', ['uid' => $user->id], 'warning');
             return response()->json(['code' => 'INVALID_CREDENTIALS'], 401);
         }
 
-        // Autentica via sessão (middleware de sessão já está no pipeline)
-        Auth::login($user, false);
-        $request->session()->regenerate();
+        $abilities = match ($user->role) {
+            'superuser' => ['*'],
+            'owner'     => ['vehicles:delete','users:read'],
+            'agent'     => ['users:read'],
+            default     => []
+        };
+
+        $tokenName = sprintf('api-%s-%s', $user->tenant_id ?? 'none', now()->toIso8601String());
+        $token = $user->createToken($tokenName, $abilities)->plainTextToken;
 
         $this->flog('auth.login.ok', ['uid' => $user->id]);
 
         return response()->json([
             'data' => [
-                'id'        => $user->id,
-                'email'     => $user->email,
-                'role'      => $user->role,
-                'tenant_id' => $user->tenant_id,
+                'token'      => $token,
+                'token_type' => 'Bearer',
+                'user'       => [
+                    'id'        => $user->id,
+                    'email'     => $user->email,
+                    'name'      => $user->name,
+                    'role'      => $user->role,
+                    'tenant_id' => $user->tenant_id,
+                ],
             ],
         ], 200);
     }
 
-    /** GET /api/v1/me (autenticado) */
     public function me(Request $request)
     {
-        $u = Auth::user();
+        $u = $request->user();
         if (! $u) {
             return response()->json(['code' => 'UNAUTHENTICATED'], 401);
         }
@@ -103,28 +100,21 @@ class AuthController extends Controller
             'data' => [
                 'id'        => $u->id,
                 'email'     => $u->email,
+                'name'      => $u->name,
                 'role'      => $u->role,
                 'tenant_id' => $u->tenant_id,
             ],
         ], 200);
     }
 
-    /** POST /api/v1/auth/logout (autenticado) */
     public function logout(Request $request)
     {
-        $u = Auth::user();
-        $this->flog('auth.logout.start', ['uid' => $u?->id]);
-
-        Auth::logout();
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
-
-        $this->flog('auth.logout.ok');
-
+        if ($request->user() && $request->user()->currentAccessToken()) {
+            $request->user()->currentAccessToken()->delete();
+        }
         return response()->noContent();
     }
 
-    /** POST /api/v1/auth/forgot — simples/idempotente */
     public function forgot(Request $request)
     {
         $email = (string) $request->input('email');

@@ -8,7 +8,6 @@ class UserPolicy
 {
     public function viewAny(User $user): bool
     {
-        // Apenas Owner lista usuários do próprio tenant
         return $user->role === 'owner';
     }
 
@@ -17,21 +16,25 @@ class UserPolicy
         if ($user->role === 'owner') {
             return $target->tenant_id === $user->tenant_id;
         }
-        return $user->id === $target->id; // cada um vê a si mesmo
+        // qualquer usuário pode ver a si próprio
+        return $user->id === $target->id;
     }
 
     public function create(User $user): bool
     {
-        return $user->role === 'owner';
+        // Apenas superuser cria usuários
+        return $user->role === 'superuser';
     }
 
     public function update(User $user, User $target): bool
     {
+        // Owner edita usuários do seu tenant
         return $user->role === 'owner' && $target->tenant_id === $user->tenant_id;
     }
 
     public function delete(User $user, User $target): bool
     {
+        // Owner pode excluir usuários do seu tenant
         return $user->role === 'owner' && $target->tenant_id === $user->tenant_id;
     }
 }

@@ -12,28 +12,14 @@ Route::middleware(['api', 'request.id', 'tenant'])
         Route::post('auth/login',  [AuthController::class, 'login']);
         Route::post('auth/forgot', [AuthController::class, 'forgot']);
 
-        // /me (sem auth): retorna 401 se não estiver logado
-        Route::get('me', function (Request $request) {
-            $u = $request->user();
-            if (!$u) {
-                return response()->json([
-                    'code'    => 'UNAUTHENTICATED',
-                    'message' => 'Não autenticado.',
-                ], 401);
-            }
-            return response()->json([
-                'data' => [
-                    'id'        => $u->id,
-                    'email'     => $u->email,
-                    'tenant_id' => $u->tenant_id,
-                ],
-            ], 200);
-        });
-
-        // protegidos
-        Route::middleware('auth')->group(function () {
+        // protegidos (Sanctum token)
+        Route::middleware('auth:sanctum')->group(function () {
             Route::post('auth/logout', [AuthController::class, 'logout']);
 
+            // /me autenticado
+            Route::get('me', [AuthController::class, 'me']);
+
+            // vehicles
             Route::get('vehicles',         [VehicleController::class, 'index']);
             Route::post('vehicles',        [VehicleController::class, 'store']);
             Route::get('vehicles/{id}',    [VehicleController::class, 'show']);

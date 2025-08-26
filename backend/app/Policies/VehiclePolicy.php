@@ -9,38 +9,33 @@ class VehiclePolicy
 {
     public function viewAny(User $user): bool
     {
-        // Owner/Agent do tenant podem listar; superuser depende de rota/admin (fora do MVP público)
+        // Owner/Agent (e Superuser, se logado num tenant) podem listar
         return in_array($user->role, ['owner','agent','superuser'], true);
     }
 
     public function view(User $user, Vehicle $vehicle): bool
     {
-        if ($user->role === 'superuser') {
-            // Para superuser em endpoints públicos, NÃO permitir cross-tenant por padrão
-            return $vehicle->tenant_id === $user->tenant_id || is_null($user->tenant_id) === false;
-        }
+        // NUNCA permitir cross-tenant pela API pública
         return $vehicle->tenant_id === $user->tenant_id;
     }
 
     public function create(User $user): bool
     {
+        // Agentes podem criar veículos 
         return in_array($user->role, ['owner','agent'], true);
     }
 
     public function update(User $user, Vehicle $vehicle): bool
     {
-        if ($user->role === 'superuser') {
-            // idem view: superuser só em área/rota administrativa (não coberta aqui)
-            return false;
-        }
-        return $vehicle->tenant_id === $user->tenant_id && in_array($user->role, ['owner','agent'], true);
+        // Somente owner/agent do MESMO tenant
+        return $vehicle->tenant_id === $user->tenant_id
+            && in_array($user->role, ['owner','agent'], true);
     }
 
     public function delete(User $user, Vehicle $vehicle): bool
     {
-        if ($user->role === 'superuser') {
-            return false;
-        }
-        return $vehicle->tenant_id === $user->tenant_id && in_array($user->role, ['owner','agent'], true);
+        // Apenas OWNER pode excluir veículos (mesmo tenant)
+        return $vehicle->tenant_id === $user->tenant_id
+            && $user->role === 'owner';
     }
 }

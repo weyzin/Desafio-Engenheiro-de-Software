@@ -7,6 +7,10 @@ export default function LoginPage() {
   const { login } = useAuth()
   const nav = useNavigate()
 
+  const [tenant, setTenant] = React.useState<string>(
+    // tenta ler do localStorage; se não houver, usa .env; fallback "acme"
+    localStorage.getItem("tenant") || (import.meta.env.VITE_TENANT as string) || "acme"
+  )
   const [email, setEmail] = React.useState("owner@acme.com")
   const [password, setPassword] = React.useState("")
   const [show, setShow] = React.useState(false)
@@ -34,8 +38,7 @@ export default function LoginPage() {
     setLoading(true)
     setFormError(null)
     try {
-      await login(email, password)
-      // sucesso: sem toast; só navega
+      await login(email, password, tenant) // <- envia tenant
       nav("/vehicles", { replace: true })
     } catch (err: any) {
       setFormError(humanizeError(err))
@@ -64,6 +67,23 @@ export default function LoginPage() {
         >
           <h1 className="text-xl font-semibold">Entrar</h1>
 
+          {/* Tenant */}
+          <div className="grid gap-1">
+            <label htmlFor="tenant" className="text-sm opacity-80">Tenant</label>
+            <input
+              id="tenant"
+              type="text"
+              value={tenant}
+              onChange={(e) => setTenant(e.target.value)}
+              className="rounded px-3 py-2 bg-neutral-800 border border-neutral-700"
+              placeholder="acme | globex"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+          </div>
+
+          {/* E-mail */}
           <div className="grid gap-1">
             <label htmlFor="email" className="text-sm opacity-80">E-mail</label>
             <input
@@ -77,6 +97,7 @@ export default function LoginPage() {
             />
           </div>
 
+          {/* Senha */}
           <div className="grid gap-1">
             <label htmlFor="password" className="text-sm opacity-80">Senha</label>
             <div className="flex items-stretch">

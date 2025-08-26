@@ -9,7 +9,7 @@ export default function Layout() {
       <header className="bg-white/80 backdrop-blur shadow">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <Link to="/vehicles" className="font-semibold tracking-tight">
-            Vehicles
+            Desafio
           </Link>
           <nav className="flex items-center gap-6 text-sm">
             <NavLink
