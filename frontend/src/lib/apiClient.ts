@@ -1,5 +1,4 @@
 import axios, { AxiosError } from "axios";
-import type { AxiosRequestConfig } from "axios";
 
 export type ApiError = {
   status?: number;
@@ -10,60 +9,87 @@ export type ApiError = {
 };
 
 const baseURL = import.meta.env.VITE_API_URL as string;
-if (!baseURL) {
-  console.warn(" VITE_API_URL não definido");
-}
+if (!baseURL) console.warn("⚠️ VITE_API_URL não definido");
 
-/** ===== Auth storage ===== */
-const TOKEN_KEY = "token";
+// ===== Auth storage (token & tenant) =====
+const TOKEN_KEY  = "token";
 const TENANT_KEY = "tenant";
 
-export function getAuth() {
-  return {
-    token: localStorage.getItem(TOKEN_KEY) || "",
-    tenant:
-      localStorage.getItem(TENANT_KEY) ||
-      (import.meta.env.VITE_TENANT as string) ||
-      "",
-  };
+// getters/setters individuais (mantidos p/ compatibilidade)
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+export function setToken(token: string) {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+export function clearToken() {
+  localStorage.removeItem(TOKEN_KEY);
 }
 
-export function setAuth(token: string, tenant?: string) {
-  localStorage.setItem(TOKEN_KEY, token);
-  if (tenant) localStorage.setItem(TENANT_KEY, tenant);
+/**
+ * ⚠️ Importante: não herdamos mais o tenant do .env aqui.
+ * O tenant ativo é sempre o que estiver no localStorage
+ * (definido na tela de login). Isso evita “grudar” X-Tenant.
+ */
+export function getTenant(): string | null {
+  return localStorage.getItem(TENANT_KEY);
+}
+export function setTenant(slug: string) {
+  localStorage.setItem(TENANT_KEY, slug);
+}
+export function clearTenant() {
+  localStorage.removeItem(TENANT_KEY);
+}
+
+/** Helpers combinados usados pelo AuthContext */
+export function getAuth(): { token: string | null; tenant: string | null } {
+  return { token: getToken(), tenant: getTenant() };
+}
+
+/**
+ * setAuth:
+ * - token: se vier string, salva; se vier undefined, mantém; se vier null, remove.
+ * - tenant: se vier string, salva; se vier undefined, mantém; se vier null, remove.
+ */
+export function setAuth(token?: string | null, tenant?: string | null) {
+  if (token === null) clearToken();
+  else if (typeof token === "string") setToken(token);
+
+  if (tenant === null) clearTenant();
+  else if (typeof tenant === "string" && tenant.trim()) setTenant(tenant.trim());
 }
 
 export function clearAuth() {
-  localStorage.removeItem(TOKEN_KEY);
-  // não removo tenant por padrão; comente a linha abaixo se preferir manter
-  // localStorage.removeItem(TENANT_KEY);
+  clearToken();
+  clearTenant();
 }
 
-/** ===== Axios instance ===== */
+// ===== Axios =====
 export const api = axios.create({
   baseURL,
+  withCredentials: true,
+  xsrfCookieName: "XSRF-TOKEN",
+  xsrfHeaderName: "X-XSRF-TOKEN",
   headers: { Accept: "application/json" },
 });
 
-/** Anexa Authorization + X-Tenant a cada request */
+// Anexa Authorization e X-Tenant dinamicamente
 api.interceptors.request.use((cfg) => {
   const { token, tenant } = getAuth();
-
-  cfg.headers = cfg.headers ?? {};
-
-  if (token) (cfg.headers as any).Authorization = `Bearer ${token}`;
-  if (tenant) (cfg.headers as any)["X-Tenant"] = tenant;
-
+  if (token)  cfg.headers.set("Authorization", `Bearer ${token}`);
+  // só envia X-Tenant se houver (root sem tenant não manda header)
+  if (tenant) cfg.headers.set("X-Tenant", tenant);
+  else        cfg.headers.delete?.("X-Tenant");
   return cfg;
 });
 
-/** Normaliza erros em ApiError */
+// Normaliza erros
 api.interceptors.response.use(
   (res) => res,
   (err: AxiosError<any>): Promise<never> => {
     const status = err.response?.status;
-    const data = err.response?.data as any;
-    const retry = Number(err.response?.headers?.["retry-after"]);
+    const data   = err.response?.data as any;
+    const retry  = Number(err.response?.headers?.["retry-after"]);
     const apiErr: ApiError = {
       status,
       code: data?.code || data?.error || "UNKNOWN_ERROR",
@@ -75,16 +101,18 @@ api.interceptors.response.use(
   }
 );
 
-/** Helpers opcionais para chamadas diretas com headers forçados */
-export async function $get<T = any>(url: string, cfg?: AxiosRequestConfig) {
-  return api.get<T>(url, cfg).then((r) => r.data);
-}
-export async function $post<T = any>(url: string, body?: any, cfg?: AxiosRequestConfig) {
-  return api.post<T>(url, body, cfg).then((r) => r.data);
-}
-export async function $put<T = any>(url: string, body?: any, cfg?: AxiosRequestConfig) {
-  return api.put<T>(url, body, cfg).then((r) => r.data);
-}
-export async function $del<T = any>(url: string, cfg?: AxiosRequestConfig) {
-  return api.delete<T>(url, cfg).then((r) => r.data);
+// Origem p/ CSRF (se precisar)
+const apiOrigin = (() => {
+  try { return new URL(baseURL).origin; } catch { return ""; }
+})();
+
+let csrfFetched = false;
+export async function getCsrfCookie() {
+  if (!apiOrigin) return;
+  if (csrfFetched) return;
+  await axios.get(`${apiOrigin}/sanctum/csrf-cookie`, {
+    withCredentials: true,
+    headers: { Accept: "application/json" },
+  });
+  csrfFetched = true;
 }

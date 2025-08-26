@@ -14,7 +14,6 @@ class VehicleController extends Controller
 {
     private function currentTenantId(Request $request): ?string
     {
-        // Preferir o tenant resolvido pelo middleware; fallback para o tenant do usuário autenticado
         return $request->attributes->get('tenant_id') ?? optional($request->user())->tenant_id;
     }
 
@@ -22,39 +21,50 @@ class VehicleController extends Controller
     {
         $this->authorize('viewAny', Vehicle::class);
 
+        $tenantId = $this->currentTenantId($request);
+
+        // superuser sem tenant ativo → retorna vazio (escolha um via X-Tenant)
+        if ($request->user()?->role === 'superuser' && !$tenantId) {
+        $per = (int) $request->input('per_page', 20);
+
+        return response()
+            ->json([
+                'data' => [],
+                'meta' => [
+                    'total' => 0,
+                    'page' => 1,
+                    'per_page' => $per,
+                    'last_page' => 1,
+                    'hint' => 'Superuser sem tenant ativo. Envie X-Tenant para listar veículos.',
+                ],
+                'links' => ['next' => null, 'prev' => null],
+            ])
+            ->setEncodingOptions(JSON_PRESERVE_ZERO_FRACTION)
+            ->header('Cache-Control', 'public, max-age=30')
+            ->header('X-Active-Tenant', 'none');
+        }
+
         $q = Vehicle::query();
 
-        // Segurança extra: força o tenant da requisição mesmo que o GlobalScope esteja ausente
-        if ($tenantId = $this->currentTenantId($request)) {
+        // Força tenant da requisição
+        if ($tenantId) {
             $q->where('tenant_id', $tenantId);
         }
 
-        if ($b = $request->input('brand')) {
-            $q->where('brand', 'like', $b.'%');
-        }
-        if ($m = $request->input('model')) {
-            $q->where('model', 'like', $m.'%');
-        }
-        if (($min = $request->input('price_min')) !== null) {
-            $q->where('price', '>=', $min);
-        }
-        if (($max = $request->input('price_max')) !== null) {
-            $q->where('price', '<=', $max);
-        }
+        if ($b = $request->input('brand'))  $q->where('brand',  'like', $b.'%');
+        if ($m = $request->input('model'))  $q->where('model',  'like', $m.'%');
+        if (($min = $request->input('price_min')) !== null) $q->where('price', '>=', $min);
+        if (($max = $request->input('price_max')) !== null) $q->where('price', '<=', $max);
 
-        // Ordenação
         $allowedSorts = ['price','year','created_at'];
         foreach (SortParser::parse($request->input('sort'), $allowedSorts) as [$col,$dir]) {
             $q->orderBy($col, $dir);
         }
-        if (!$request->filled('sort')) {
-            $q->orderByDesc('created_at');
-        }
+        if (!$request->filled('sort')) $q->orderByDesc('created_at');
 
-        $perPage = (int) ($request->input('per_page', 20));
+        $perPage = (int) $request->input('per_page', 20);
         $pag = $q->paginate($perPage)->appends($request->query());
 
-        // Resposta paginada: { data, meta, links }
         return (VehicleResource::collection($pag))
             ->additional([
                 'meta'  => [
@@ -69,7 +79,6 @@ class VehicleController extends Controller
                 ],
             ])
             ->response()
-            // mantém zeros decimais em floats (ex.: 47000.0)
             ->setEncodingOptions(JSON_PRESERVE_ZERO_FRACTION)
             ->header('Cache-Control', 'public, max-age=60');
     }
@@ -84,12 +93,14 @@ class VehicleController extends Controller
         $data['images_json'] = $data['images'] ?? [];
         unset($data['images']);
 
+        // tenant: para superuser, usa o header; para demais, o do usuário
+        $tenantId = $request->attributes->get('tenant_id') ?? $user->tenant_id;
+
         $veh = new Vehicle($data);
-        $veh->tenant_id  = $user->tenant_id;
+        $veh->tenant_id  = $tenantId;
         $veh->created_by = $user->id;
         $veh->save();
 
-        // Força JSON_PRESERVE_ZERO_FRACTION nesta resposta
         return response()->json(
             ['data' => (new VehicleResource($veh))->toArray($request)],
             201,
@@ -102,7 +113,6 @@ class VehicleController extends Controller
     {
         $tenantId = $this->currentTenantId($request);
 
-        // Travar por tenant ANTES do find: evita vazamento mesmo sem GlobalScope
         $veh = Vehicle::query()
             ->when($tenantId, fn($q) => $q->where('tenant_id', $tenantId))
             ->whereKey($id)
@@ -118,7 +128,13 @@ class VehicleController extends Controller
 
     public function update(UpdateRequest $request, int $id)
     {
-        $veh = Vehicle::findOrFail($id);
+        $tenantId = $this->currentTenantId($request);
+
+        $veh = Vehicle::query()
+            ->when($tenantId, fn($q) => $q->where('tenant_id', $tenantId))
+            ->whereKey($id)
+            ->firstOrFail();
+
         $this->authorize('update', $veh);
 
         $data = $request->validated();
@@ -132,7 +148,6 @@ class VehicleController extends Controller
         $veh->save();
         $veh->refresh();
 
-        // Força JSON_PRESERVE_ZERO_FRACTION nesta resposta
         return response()->json(
             ['data' => (new VehicleResource($veh))->toArray($request)],
             200,
@@ -143,12 +158,18 @@ class VehicleController extends Controller
 
     public function destroy(Request $request, int $id)
     {
-        $veh = Vehicle::findOrFail($id);
+        $tenantId = $this->currentTenantId($request);
+
+        $veh = Vehicle::query()
+            ->when($tenantId, fn($q) => $q->where('tenant_id', $tenantId))
+            ->whereKey($id)
+            ->firstOrFail();
+
         $this->authorize('delete', $veh);
 
         $veh->deleted_by = $request->user()->id;
         $veh->save();
-        $veh->delete(); // soft delete, se habilitado
+        $veh->delete();
 
         return response()->noContent();
     }

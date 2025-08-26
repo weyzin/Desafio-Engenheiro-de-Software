@@ -7,28 +7,54 @@ use Illuminate\Support\Str;
 
 class TenantManager
 {
-    private ?Tenant $current = null;
+    private const KEY_ID   = 'tenant_id';
+    private const KEY_SLUG = 'tenant_slug';
 
-    public function current(): ?Tenant
+    /** Usa sempre a request atual (evita problemas se o container usar singleton). */
+    private function req()
     {
-        return $this->current;
-    }
-
-    public function set(Tenant $tenant): void
-    {
-        $this->current = $tenant;
+        return request();
     }
 
     public function id(): ?string
     {
-        return $this->current?->id;
+        return $this->req()->attributes->get(self::KEY_ID);
     }
 
-    public function reset(): void
+    public function slug(): ?string
     {
-        $this->current = null;
+        return $this->req()->attributes->get(self::KEY_SLUG);
     }
 
+    public function set(?Tenant $tenant): void
+    {
+        if ($tenant) {
+            $this->req()->attributes->set(self::KEY_ID,   $tenant->id);
+            $this->req()->attributes->set(self::KEY_SLUG, $tenant->slug ?? null);
+        } else {
+            $this->clear();
+        }
+    }
+
+    public function setId(?string $tenantId, ?string $slug = null): void
+    {
+        if ($tenantId) {
+            $this->req()->attributes->set(self::KEY_ID,   $tenantId);
+            if ($slug !== null) {
+                $this->req()->attributes->set(self::KEY_SLUG, $slug);
+            }
+        } else {
+            $this->clear();
+        }
+    }
+
+    public function clear(): void
+    {
+        $this->req()->attributes->remove(self::KEY_ID);
+        $this->req()->attributes->remove(self::KEY_SLUG);
+    }
+
+    // ===== lookups =====
     public function bySlug(string $slug): ?Tenant
     {
         return Tenant::where('slug', $slug)->first();
@@ -41,22 +67,14 @@ class TenantManager
 
     public function bySubdomain(string $host): ?Tenant
     {
-        if (!str_contains($host, '.')) {
-            return null;
-        }
+        if (!str_contains($host, '.')) return null;
         $sub = Str::before($host, '.');
-
         return Tenant::where('slug', $sub)->first();
     }
 
     public function allowsHeaderInThisEnv(): bool
     {
-        // Em testes, rodando via CLI, permita SEMPRE (evita 404 falso).
-        if (app()->runningInConsole()) {
-            return true;
-        }
-
-        // Local/testing ou flag explícita
-        return app()->environment(['local', 'testing']) || (bool) config('tenancy.allow_header', false);
+        if (app()->runningInConsole()) return true;
+        return app()->environment(['local','testing']) || (bool) config('tenancy.allow_header', false);
     }
 }

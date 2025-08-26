@@ -1,89 +1,83 @@
-import React from "react"
-import { useAuth } from "./AuthContext"
-import { Link, useNavigate } from "react-router-dom"
-import type { ApiError } from "../../lib/apiClient"
+import React from "react";
+import { useAuth } from "./AuthContext";
+import { Link, useNavigate } from "react-router-dom";
+import type { ApiError } from "../../lib/apiClient";
 
 export default function LoginPage() {
-  const { login } = useAuth()
-  const nav = useNavigate()
+  const { login } = useAuth();
+  const nav = useNavigate();
 
-  const [tenant, setTenant] = React.useState<string>(
-    // tenta ler do localStorage; se não houver, usa .env; fallback "acme"
-    localStorage.getItem("tenant") || (import.meta.env.VITE_TENANT as string) || "acme"
-  )
-  const [email, setEmail] = React.useState("owner@acme.com")
-  const [password, setPassword] = React.useState("")
-  const [show, setShow] = React.useState(false)
-  const [loading, setLoading] = React.useState(false)
-  const [formError, setFormError] = React.useState<string | null>(null)
+  const [tenant, setTenant] = React.useState("");
+  const [email, setEmail] = React.useState("owner@acme.com");
+  const [password, setPassword] = React.useState("");
+  const [show, setShow] = React.useState(false);
+  const [loading, setLoading] = React.useState(false);
+  const [formError, setFormError] = React.useState<string | null>(null);
 
   function humanizeError(err: ApiError | any): string {
-    const status = err?.status
-    const code = (err?.code || "").toString().toUpperCase()
+    const status = err?.status;
+    const code = (err?.code || "").toString().toUpperCase();
     if (status === 401 && (code.includes("INVALID") || code.includes("CREDENTIAL"))) {
-      return "E-mail ou senha incorretos."
+      return "E-mail ou senha incorretos.";
+    }
+    if (status === 400 && code === "SUPERUSER_MUST_LOGIN_WITHOUT_TENANT") {
+      return "Superuser deve logar sem tenant.";
     }
     if (status === 429) {
-      const s = err?.retryAfter ? ` Aguarde ~${err.retryAfter}s e tente novamente.` : ""
-      return "Muitas tentativas." + s
+      const s = err?.retryAfter ? ` Aguarde ~${err.retryAfter}s e tente novamente.` : "";
+      return "Muitas tentativas." + s;
     }
-    if (status === 403) return "Acesso negado."
-    if (status === 404) return "Recurso não encontrado."
-    if (status === 422) return "Dados inválidos. Verifique os campos."
-    return err?.message || "Falha no login."
+    if (status === 403) return "Acesso negado.";
+    if (status === 404) return "Recurso não encontrado.";
+    if (status === 422) return "Dados inválidos. Verifique os campos.";
+    return err?.message || "Falha no login.";
   }
 
   async function onSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setLoading(true)
-    setFormError(null)
+    e.preventDefault();
+    setLoading(true);
+    setFormError(null);
     try {
-      await login(email, password, tenant) // <- envia tenant
-      nav("/vehicles", { replace: true })
+      // regra: root (admin@root.com ou role superuser) deve entrar sem tenant
+      if (email.trim().toLowerCase() === "admin@root.com" && tenant.trim()) {
+        setFormError("Superuser deve logar sem tenant.");
+        return;
+      }
+
+      await login(tenant, email, password);
+      nav("/vehicles", { replace: true });
     } catch (err: any) {
-      setFormError(humanizeError(err))
+      setFormError(humanizeError(err));
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
   return (
     <div className="min-h-screen grid place-items-center p-6">
       <div className="w-full max-w-sm">
-        {/* Banner de erro centralizado */}
         {formError && (
-          <div
-            role="alert"
-            className="mb-4 rounded-2xl border border-red-300 bg-red-50 text-red-800 px-4 py-3 text-sm"
-          >
+          <div role="alert" className="mb-4 rounded-2xl border border-red-300 bg-red-50 text-red-800 px-4 py-3 text-sm">
             {formError}
           </div>
         )}
 
-        <form
-          onSubmit={onSubmit}
-          className="bg-neutral-900 text-neutral-100 w-full rounded-2xl p-6 grid gap-4"
-          aria-busy={loading}
-        >
+        <form onSubmit={onSubmit} className="bg-neutral-900 text-neutral-100 w-full rounded-2xl p-6 grid gap-4" aria-busy={loading}>
           <h1 className="text-xl font-semibold">Entrar</h1>
 
-          {/* Tenant */}
           <div className="grid gap-1">
             <label htmlFor="tenant" className="text-sm opacity-80">Tenant</label>
             <input
               id="tenant"
               type="text"
+              placeholder="acme | globex | outro"
               value={tenant}
               onChange={(e) => setTenant(e.target.value)}
               className="rounded px-3 py-2 bg-neutral-800 border border-neutral-700"
-              placeholder="acme | globex"
-              autoCapitalize="off"
-              autoCorrect="off"
-              spellCheck={false}
+              autoComplete="off"
             />
           </div>
 
-          {/* E-mail */}
           <div className="grid gap-1">
             <label htmlFor="email" className="text-sm opacity-80">E-mail</label>
             <input
@@ -97,7 +91,6 @@ export default function LoginPage() {
             />
           </div>
 
-          {/* Senha */}
           <div className="grid gap-1">
             <label htmlFor="password" className="text-sm opacity-80">Senha</label>
             <div className="flex items-stretch">
@@ -112,7 +105,7 @@ export default function LoginPage() {
               />
               <button
                 type="button"
-                onClick={() => setShow(v => !v)}
+                onClick={() => setShow((v) => !v)}
                 className="rounded-r px-3 py-2 bg-neutral-800 border border-neutral-700 border-l-0 text-sm"
                 aria-pressed={show}
                 aria-label={show ? "Ocultar senha" : "Mostrar senha"}
@@ -139,5 +132,5 @@ export default function LoginPage() {
         </form>
       </div>
     </div>
-  )
+  );
 }

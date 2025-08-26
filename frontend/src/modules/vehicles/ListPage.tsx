@@ -7,6 +7,7 @@ import { Skeleton } from "../../ui/Skeleton"
 import { Pagination } from "../../ui/Pagination"
 import { useToast } from "../../ui/Toast"
 import ImageThumb from "../../ui/ImageThumb"
+import { getTenant } from "../../lib/apiClient"
 
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" })
 const SORT_LABEL: Record<string, string> = {
@@ -29,15 +30,22 @@ export default function VehiclesList() {
     page: sp.get("page") ? Number(sp.get("page")) : undefined,
   }
 
+  // root sem tenant: não buscar/mostrar erro
+  const hasTenant = !!getTenant()
+
   const { data, isLoading, isError } = useQuery<ListResponse<Vehicle>>({
-    queryKey: ["vehicles", filters],
+    queryKey: ["vehicles", filters, hasTenant],
     queryFn: () => listVehicles(filters),
     placeholderData: (prev) => prev,
+    enabled: hasTenant,        // 👈 só consulta se houver tenant
+    retry: false,              // evita 3 tentativas automáticas
   })
 
   React.useEffect(() => {
-    if (isError) push({ kind: "error", message: "Falha ao carregar veículos." })
-  }, [isError, push])
+    if (hasTenant && isError) {
+      push({ kind: "error", message: "Falha ao carregar veículos." })
+    }
+  }, [isError, hasTenant, push])
 
   // ---- Fallback local (se o backend ignorar ano/status/sort) ----
   const pageData = React.useMemo(() => {
@@ -53,14 +61,13 @@ export default function VehiclesList() {
         (a ? Date.parse(a) : 0) - (b ? Date.parse(b) : 0)
 
       switch (s) {
-        case "price_asc":  arr.sort((a,b)=> cmpNum(Number(a.price),Number(b.price))); break
-        case "price_desc": arr.sort((a,b)=> cmpNum(Number(b.price),Number(a.price))); break
-        case "year_asc":   arr.sort((a,b)=> cmpNum(a.year,b.year)); break
-        case "year_desc":  arr.sort((a,b)=> cmpNum(b.year,a.year)); break
+        case "price_asc":   arr.sort((a,b)=> cmpNum(Number(a.price),Number(b.price))); break
+        case "price_desc":  arr.sort((a,b)=> cmpNum(Number(b.price),Number(a.price))); break
+        case "year_asc":    arr.sort((a,b)=> cmpNum(a.year,b.year)); break
+        case "year_desc":   arr.sort((a,b)=> cmpNum(b.year,a.year)); break
+        // se um dia habilitar sort por criação no front
         case "created_asc":  arr.sort((a,b)=> cmpDate(a.created_at,b.created_at)); break
         case "created_desc": arr.sort((a,b)=> cmpDate(b.created_at,a.created_at)); break
-        case "created_asc":  arr.sort((a,b)=> (a.id - b.id)); break
-        case "created_desc": arr.sort((a,b)=> (b.id - a.id)); break
       }
     }
     return { ...data, data: arr }
@@ -90,6 +97,28 @@ export default function VehiclesList() {
   }
 
   const d = pageData
+
+  // Empty state específico para root sem tenant
+  if (!hasTenant) {
+    return (
+      <section className="grid gap-4">
+        <header className="flex items-end justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-semibold">Veículos</h1>
+            <p className="text-sm text-gray-600">Selecione um tenant para visualizar os veículos.</p>
+          </div>
+          {/* botão continua visível, mas você pode esconder se quiser */}
+          <button disabled className="rounded bg-gray-300 text-white px-4 py-2 opacity-60 cursor-not-allowed">
+            Novo veículo
+          </button>
+        </header>
+
+        <div className="rounded-2xl border p-6 bg-gray-50 text-sm text-gray-700">
+          Nenhum tenant ativo. Use o seletor de tenant e tente novamente.
+        </div>
+      </section>
+    )
+  }
 
   return (
     <section className="grid gap-4">

@@ -15,35 +15,45 @@ class TenantResolver
 
     public function handle(Request $request, Closure $next)
     {
-        $host    = strtolower($request->getHost());
-        $rid     = $request->attributes->get('request_id') ?? $request->headers->get('X-Request-Id');
-        $xTenant = $request->headers->get('X-Tenant');
-        $allows  = $this->tm->allowsHeaderInThisEnv();
-        $env     = app()->environment();
-        $inCli   = app()->runningInConsole();
+        $host   = strtolower($request->getHost());
+        $rid    = $request->attributes->get('request_id') ?? $request->headers->get('X-Request-Id');
+        $allows = $this->tm->allowsHeaderInThisEnv();
+        $env    = app()->environment();
+
+        // zera sempre: evita herdar tenant entre requests
+        $this->tm->clear();
 
         Log::info('tenancy.resolve.start', [
             'request_id' => $rid,
             'rid'        => $rid,
             'path'       => ltrim($request->path(), '/'),
             'host'       => $host,
-            'x_tenant'   => $xTenant,
+            'x_tenant'   => $request->headers->get('X-Tenant'),
             'allowsHdr'  => $allows,
             'env'        => $env,
-            'in_console' => $inCli,
         ]);
 
-        // Sempre propaga o tenant resolvido p/ a Request
-        $setRequestTenant = function ($tenant) use ($request) {
-            if ($tenant) {
-                $request->attributes->set('tenant_id', $tenant->id);
-                $request->attributes->set('tenant_slug', $tenant->slug ?? null);
+        // ⚠️ Libera rotas de auth *e* /me do requisito de tenant.
+        // O /me precisa funcionar para superuser sem X-Tenant.
+        if ($request->is('api/v1/auth/*') || $request->is('api/v1/me')) {
+            if ($allows && $request->hasHeader('X-Tenant')) {
+                $slug = strtolower($request->header('X-Tenant'));
+                if ($t = $this->tm->bySlug($slug)) {
+                    $this->tm->set($t);
+                    $request->attributes->set('tenant_id',   $t->id);
+                    $request->attributes->set('tenant_slug', $t->slug ?? null);
+                    Log::info('tenancy.resolve.header.ok.auth_or_me', ['rid' => $rid, 'tenant' => $t->slug]);
+                } else {
+                    Log::notice('tenancy.resolve.header.unknown.auth_or_me', ['rid' => $rid, 'slug' => $slug]);
+                    // não derruba: /me e /auth podem operar sem tenant
+                }
             }
-        };
+            return $next($request);
+        }
 
+        // --- fluxo normal (demais rotas precisam de tenant) ---
         $resolved = null;
 
-        // 1) Header tem prioridade quando permitido — e deve sobrescrever o tenant atual
         if ($allows && $request->hasHeader('X-Tenant')) {
             $slug = strtolower($request->header('X-Tenant'));
             if ($t = $this->tm->bySlug($slug)) {
@@ -55,33 +65,28 @@ class TenantResolver
             }
         }
 
-        // 2) Domínio customizado (se nada foi resolvido pelo header)
         if (!$resolved && ($t = $this->tm->byDomain($host))) {
             $resolved = $t;
             Log::info('tenancy.resolve.domain.ok', ['rid' => $rid, 'tenant' => $t->slug]);
         }
 
-        // 3) Subdomínio (slug.dominio.com) (se ainda não resolveu)
         if (!$resolved && ($t = $this->tm->bySubdomain($host))) {
             $resolved = $t;
             Log::info('tenancy.resolve.subdomain.ok', ['rid' => $rid, 'tenant' => $t->slug]);
         }
 
-        // 4) Caso não resolva:
         if (!$resolved) {
             if ($allows) {
-                // Em dev/testing/CLI sem domínio resolvido, exigimos o header
                 Log::notice('tenancy.resolve.header.required', ['rid' => $rid]);
                 throw new BadRequestHttpException('TENANT_HEADER_REQUIRED');
             }
-            // Em produção, sem domínio/subdomínio resolvido → 404
             Log::warning('tenancy.resolve.missing', ['rid' => $rid, 'host' => $host]);
             throw new NotFoundHttpException('NOT_FOUND');
         }
 
-        // Define no manager (sobrescrevendo, se necessário) e propaga na Request
         $this->tm->set($resolved);
-        $setRequestTenant($resolved);
+        $request->attributes->set('tenant_id',   $resolved->id);
+        $request->attributes->set('tenant_slug', $resolved->slug ?? null);
 
         return $next($request);
     }
