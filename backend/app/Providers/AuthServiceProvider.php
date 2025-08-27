@@ -7,12 +7,14 @@ use App\Models\Vehicle;
 use App\Models\User;
 use App\Policies\VehiclePolicy;
 use App\Policies\UserPolicy;
+use App\Policies\TenantPolicy;
 
 class AuthServiceProvider extends ServiceProvider
 {
     protected $policies = [
         Vehicle::class => VehiclePolicy::class,
         User::class    => UserPolicy::class,
+        Tenant::class    => TenantPolicy::class,
     ];
 
     public function boot(): void

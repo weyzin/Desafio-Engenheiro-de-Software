@@ -3,18 +3,29 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class Tenant extends Model
 {
-    protected $table = 'tenants';
-    public $incrementing = false; // UUID
+    public $incrementing = false;
     protected $keyType = 'string';
 
-    protected $fillable = ['id', 'name', 'slug'];
+    protected $fillable = ['name','slug'];
 
-    public function domains(): HasMany
+    protected static function booted()
     {
-        return $this->hasMany(TenantDomain::class);
+        static::creating(function (Tenant $t) {
+            if (empty($t->id)) {
+                $t->id = (string) Str::uuid();
+            }
+            // normaliza slug
+            $t->slug = strtolower($t->slug);
+        });
+
+        static::updating(function (Tenant $t) {
+            if (!empty($t->slug)) {
+                $t->slug = strtolower($t->slug);
+            }
+        });
     }
 }

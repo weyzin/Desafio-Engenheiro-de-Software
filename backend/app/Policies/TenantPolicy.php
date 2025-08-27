@@ -3,8 +3,9 @@
 namespace App\Policies;
 
 use App\Models\User;
+use App\Models\Tenant;
 
-class UserPolicy
+class TenantPolicy
 {
     public function before(User $user): ?bool
     {
@@ -12,8 +13,8 @@ class UserPolicy
     }
 
     public function viewAny(User $user): bool { return true; }
-    public function view(User $user, User $target): bool { return true; }
+    public function view(User $user, Tenant $t): bool { return true; }
     public function create(User $user): bool { return true; }
-    public function update(User $user, User $target): bool { return true; }
-    public function delete(User $user, User $target): bool { return true; }
+    public function update(User $user, Tenant $t): bool { return true; }
+    public function delete(User $user, Tenant $t): bool { return true; }
 }
