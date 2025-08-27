@@ -5,7 +5,7 @@ import type { ListResponse } from "../../vehicles/types"
 export type Tenant = { id: string; name: string; slug: string; created_at?: string; updated_at?: string }
 export type TenantPayload = { name: string; slug: string }
 
-export async function listTenants(params: { page?: number; q?: string }) {
+export async function listTenants(params: { page?: number; q?: string; per_page?: number }) {
   const { data } = await api.get<ListResponse<Tenant>>("/tenants", { params })
   return data
 }

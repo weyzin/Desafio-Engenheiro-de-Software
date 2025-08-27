@@ -13,6 +13,7 @@ import UsersListPage from "./modules/admin/users/UsersListPage.tsx"
 import UserFormPage from "./modules/admin/users/UserFormPage.tsx"
 import TenantsListPage from "./modules/admin/tenants/TenantsListPage.tsx"
 import TenantFormPage from "./modules/admin/tenants/TenantFormPage.tsx"
+import AdminHome from "./modules/admin/AdminHome";
 
 const queryClient = new QueryClient()
 
@@ -61,6 +62,7 @@ export const router = createBrowserRouter([
           </RequireRoles>
         ),
         children: [
+          { index: true, element: <AdminHome /> },
           { index: true, element: <UsersListPage /> },
           { path: "users", element: <UsersListPage /> },
           { path: "users/new", element: <UserFormPage mode="create" /> },

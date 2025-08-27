@@ -20,6 +20,7 @@ export default function Layout() {
             >
               Veículos
             </NavLink>
+
             <NavLink
               to="/profile"
               className={({ isActive }) =>
@@ -28,6 +29,19 @@ export default function Layout() {
             >
               Perfil
             </NavLink>
+
+            {/* botão de Admin só para superuser */}
+            {user?.role === "superuser" && (
+              <NavLink
+                to="/admin"
+                className={({ isActive }) =>
+                  isActive ? "text-blue-700 font-medium" : "text-gray-700"
+                }
+              >
+                Root Admin
+              </NavLink>
+            )}
+
             <div className="h-5 w-px bg-gray-200" aria-hidden />
             <span className="text-gray-700" aria-live="polite">
               {user?.name ?? user?.email}
