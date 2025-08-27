@@ -13,18 +13,24 @@ export type Vehicle = Audit & {
   id: number
   brand: string
   model: string
+  version?: string | null
   year: number
-  price: number // decimal(12,2)
+  km?: number
+  price: number
   status: VehicleStatus
-  images?: string[] // API expõe como "images"
+  notes?: string | null
+  images?: string[]
 }
 
 export type VehiclePayload = {
   brand: string
   model: string
+  version?: string | null
   year: number
+  km?: number
   price: number
   status?: VehicleStatus
+  notes?: string | null
   images?: string[]
 }
 

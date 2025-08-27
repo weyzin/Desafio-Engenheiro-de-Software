@@ -10,7 +10,7 @@ export type VehicleFilters = {
   price_max?: string | number
   year?: number | string
   status?: VehicleStatus | string
-  sort?: string // price_asc|price_desc|year_asc|year_desc|created_desc|created_asc
+  sort?: string
   page?: number
 }
 
@@ -18,16 +18,13 @@ function mapSortToBackend(sort?: string): Record<string, string> {
   if (!sort) return {}
   const [field, dir] = sort.split("_")
   const order_dir = (dir?.toLowerCase() === "desc" ? "desc" : "asc")
-  if (field === "created") return { order_by: "id", order_dir } 
+  if (field === "created") return { order_by: "id", order_dir }
   const order_by = field === "price" ? "price" : field === "year" ? "year" : field
   return { order_by, order_dir }
 }
 
 export async function listVehicles(params: VehicleFilters) {
-  const normalized = {
-    ...params,
-    year: params.year ? Number(params.year) : undefined,
-  }
+  const normalized = { ...params, year: params.year ? Number(params.year) : undefined }
   const sortParams = mapSortToBackend(params.sort)
   const { data } = await api.get<ListResponse<Vehicle>>("/vehicles", {
     params: { ...normalized, ...sortParams },

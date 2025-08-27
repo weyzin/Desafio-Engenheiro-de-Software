@@ -28,9 +28,12 @@ export default function VehicleFormPage({ mode }: { mode: "create" | "edit" }) {
   const [payload, setPayload] = React.useState<VehiclePayload>({
     brand: "",
     model: "",
+    version: "",
     year: new Date().getFullYear(),
+    km: 0,
     price: 0,
     status: "available",
+    notes: "",
     images: [],
   })
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string | string[]>>({})
@@ -40,9 +43,12 @@ export default function VehicleFormPage({ mode }: { mode: "create" | "edit" }) {
       setPayload({
         brand: existing.brand,
         model: existing.model,
+        version: existing.version ?? "",
         year: existing.year,
+        km: existing.km ?? 0,
         price: Number(existing.price),
         status: existing.status as VehicleStatus,
+        notes: existing.notes ?? "",
         images: existing.images ?? [],
       })
     }
@@ -145,12 +151,33 @@ export default function VehicleFormPage({ mode }: { mode: "create" | "edit" }) {
             />
           </FormField>
 
+          <FormField label="Versão" htmlFor="version" error={fieldErrors["version"]}>
+            <input
+              id="version"
+              value={payload.version ?? ""}
+              onChange={(e) => set("version", e.target.value)}
+              className="rounded border px-3 py-2"
+              placeholder="Ex.: XEi 2.0"
+            />
+          </FormField>
+
           <FormField label="Ano" htmlFor="year" error={fieldErrors["year"]}>
             <input
               id="year"
               type="number"
               value={payload.year}
               onChange={(e) => set("year", Number(e.target.value))}
+              className="rounded border px-3 py-2"
+            />
+          </FormField>
+
+          <FormField label="KM" htmlFor="km" error={fieldErrors["km"]}>
+            <input
+              id="km"
+              type="number"
+              min={0}
+              value={payload.km ?? 0}
+              onChange={(e) => set("km", Number(e.target.value))}
               className="rounded border px-3 py-2"
             />
           </FormField>
@@ -180,6 +207,16 @@ export default function VehicleFormPage({ mode }: { mode: "create" | "edit" }) {
           </FormField>
         </div>
 
+        <FormField label="Notas" htmlFor="notes" error={fieldErrors["notes"]}>
+          <textarea
+            id="notes"
+            value={payload.notes ?? ""}
+            onChange={(e) => set("notes", e.target.value)}
+            className="rounded border px-3 py-2 min-h-[96px]"
+            placeholder="Anotações sobre interessados, observações do veículo etc."
+          />
+        </FormField>
+
         {/* Imagens */}
         <div className="grid gap-2">
           <h2 className="font-medium">Imagens</h2>
@@ -187,7 +224,7 @@ export default function VehicleFormPage({ mode }: { mode: "create" | "edit" }) {
             <ul className="grid gap-2">
               {payload.images!.map((url, idx) => (
                 <li key={idx} className="flex items-center gap-2">
-                  <img src={url} alt="" className="w-16 h-10 object-cover rounded border" />
+                  <img src={url || undefined} alt="" className="w-16 h-10 object-cover rounded border" />
                   <input
                     value={url}
                     onChange={(e) => {
@@ -227,7 +264,6 @@ export default function VehicleFormPage({ mode }: { mode: "create" | "edit" }) {
         <div className="flex gap-2">
           <button
             type="submit"
-            disabled={false}
             className="rounded bg-blue-600 text-white px-4 py-2 hover:bg-blue-700"
           >
             Salvar
@@ -238,29 +274,16 @@ export default function VehicleFormPage({ mode }: { mode: "create" | "edit" }) {
         </div>
       </form>
 
-      {/* Auditoria */}
       {existing && (
         <div className="bg-white rounded-2xl border p-4 max-w-2xl">
           <h3 className="font-medium mb-2">Auditoria</h3>
           <div className="grid md:grid-cols-2 text-sm gap-x-8 gap-y-1">
-            <div>
-              <span className="text-gray-500">Criado por:</span> {existing.created_by ?? "—"}
-            </div>
-            <div>
-              <span className="text-gray-500">Criado em:</span> {existing.created_at ?? "—"}
-            </div>
-            <div>
-              <span className="text-gray-500">Atualizado por:</span> {existing.updated_by ?? "—"}
-            </div>
-            <div>
-              <span className="text-gray-500">Atualizado em:</span> {existing.updated_at ?? "—"}
-            </div>
-            <div>
-              <span className="text-gray-500">Deletado por:</span> {existing.deleted_by ?? "—"}
-            </div>
-            <div>
-              <span className="text-gray-500">Deletado em:</span> {existing.deleted_at ?? "—"}
-            </div>
+            <div><span className="text-gray-500">Criado por:</span> {existing.created_by ?? "—"}</div>
+            <div><span className="text-gray-500">Criado em:</span> {existing.created_at ?? "—"}</div>
+            <div><span className="text-gray-500">Atualizado por:</span> {existing.updated_by ?? "—"}</div>
+            <div><span className="text-gray-500">Atualizado em:</span> {existing.updated_at ?? "—"}</div>
+            <div><span className="text-gray-500">Deletado por:</span> {existing.deleted_by ?? "—"}</div>
+            <div><span className="text-gray-500">Deletado em:</span> {existing.deleted_at ?? "—"}</div>
           </div>
         </div>
       )}
