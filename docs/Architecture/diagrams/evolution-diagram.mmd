@@ -22,9 +22,4 @@ flowchart TB
     RDS --> Snap[(Snapshots e backups)]
     SM --> ECS
 
-    note right of ECS
-      Autenticação: Sanctum Bearer Token (stateless)\n
-      Tenancy: X-Tenant (dev) / fallback tenant do usuário (prod)\n
-      Redis: obrigatório em produção (rate-limit, cache, jobs)\n
-      Evolução: WAF/Shield, tracing via OTEL, SQS assíncrono
-    end
+    LEGEND[Autenticação: Sanctum Bearer Token (stateless)<br/>Tenancy: X-Tenant (dev) / fallback tenant do usuário (prod)<br/>Redis: obrigatório em produção (rate-limit, cache, jobs)<br/>Evolução: WAF/Shield, tracing via OTEL, SQS assíncrono]

@@ -13,8 +13,4 @@ flowchart TB
     S3 --> CW
     SES --> CW
 
-    note right of EB
-      Autenticação: Sanctum Bearer Token (stateless)\n
-      Tenancy: X-Tenant (dev) / fallback tenant do usuário (prod)\n
-      Auditoria: superuser cross-tenant sempre logado
-    end
+    LEGEND[Autenticação: Sanctum Bearer Token (stateless)<br/>Tenancy: X-Tenant (dev) / fallback tenant do usuário (prod)<br/>Auditoria: superuser cross-tenant sempre logado]
