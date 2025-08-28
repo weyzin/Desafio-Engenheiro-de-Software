@@ -12,7 +12,8 @@ Route::prefix('v1')
 
         // --- públicos (sem tenant) ---
         Route::post('auth/login',  [AuthController::class, 'login']);
-        Route::post('auth/forgot', [AuthController::class, 'forgot']);
+        Route::post('auth/forgot', [AuthController::class, 'forgot'])->middleware('throttle:5,1');
+        Route::post('auth/reset-password', [AuthController::class, 'resetPassword'])->middleware('throttle:5,1');
 
         // --- autenticados, mas ainda SEM tenant ---
         // /me não precisa de tenant (superuser global, ou para descobrir o active_tenant)
