@@ -19,7 +19,7 @@ O envelope de erro é sempre:
 | **Code**                | **HTTP** | **Message (exemplo)**                             | **Onde ocorre**                                                                                  |
 | ----------------------- | -------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `BAD_REQUEST`           | 400      | "Requisição malformada ou parâmetros inválidos."  | Header obrigatório ausente (ex.: `X-Tenant` em dev/admin), query param inválido, JSON malformado |
-| `UNAUTHENTICATED`       | 401      | "Sessão inválida ou token ausente/expirado."      | Sem sessão válida (cookies/CSRF ausente, token inválido)                                         |
+| `UNAUTHENTICATED`       | 401      | "Sessão inválida ou token ausente/expirado."      | Header Authorization: Bearer <token> ausente, inválido ou expirado                               |
 | `FORBIDDEN`             | 403      | "Acesso negado."                                  | Policies RBAC (usuário autenticado mas sem permissão no recurso/tenant)                          |
 | `NOT_FOUND`             | 404      | "Recurso não encontrado."                         | ID inexistente **ou cross-tenant** (não vazar existência)                                        |
 | `CONFLICT`              | 409      | "Conflito de dados."                              | Unique constraint (ex.: placa duplicada em um tenant)                                            |
