@@ -1,45 +1,68 @@
-# ADR-02: Autenticação (Sanctum SPA) e Autorização (Policies) com papéis
+# ADR-02: Autenticação (Sanctum Bearer Token) e Autorização (RBAC)
 
-**Contexto**  
-Precisamos autenticar uma SPA e aplicar autorização baseada em papéis: `superuser` (global), `owner` (tenant), `agent` (operacional).
+## 1. Contexto
+Precisamos autenticar uma SPA (frontend em React) contra o backend Laravel, usando autenticação segura e autorização baseada em papéis.  
+Papéis suportados:  
+- **superuser** (global, cross-tenant com auditoria).  
+- **owner** (administrador do tenant).  
+- **agent** (usuário operacional, permissões limitadas).  
 
-**Opções consideradas**  
-1) **Laravel Sanctum** (SPA com cookies HttpOnly, CSRF).  
-2) Laravel Passport (OAuth2/JWT).  
-3) JWT manual (bibliotecas externas).
+## 2. Opções consideradas
+1. **Laravel Sanctum** (API Tokens via Bearer, stateless).  
+2. Laravel Passport (OAuth2/JWT).  
+3. JWT manual (bibliotecas externas).  
 
-**Decisão**  
-Usar **Sanctum** para **SPA**, com cookies **HttpOnly** e proteção **CSRF** (XSRF-TOKEN).  
-Armazenar papéis diretamente em uma **coluna `role`** no usuário (`superuser`, `owner`, `agent`), suficiente para o escopo atual do MVP.  
-Autorizar via **Policies** (por recurso) e **Gates** (por papéis/ações).  
- Todo acesso **cross-tenant** de superuser deve ser **auditado e restrito**, conforme definido no ADR-01.
+## 3. Decisão
+Adotamos **Laravel Sanctum em modo API Token (Bearer)**, operando de forma **stateless**.  
+Tokens são enviados no header:
 
-**Consequências (prós/cons, dívidas)**  
-* **Prós**  
-  * Simples para SPA; segura (cookies HttpOnly + SameSite).  
-  * Policies integradas ao Eloquent; fácil teste e manutenção.  
-* **Contras**  
-  * Não é OAuth2 completo (casos B2B/futuros integrações podem exigir Passport).  
-* **Dívidas**  
-  * Opcional **2FA** opt-in por tenant (tenant decide ativar ou não para seus usuários).  
-  * **Refresh de sessão** estendido, se exigido futuramente.  
-  * **Expiração de sessão configurável**, diferenciando:  
-    * **Expiração curta** para rotas sensíveis (ex.: `auth`, `users`).  
-    * **Expiração padrão** para rotas comuns.  
-  * **Revogação manual de tokens** para maior controle de segurança.  
+Authorization: Bearer <token>
 
-**Implementação/Notas**  
-* Endpoints:  
-  * `POST /api/v1/auth/login`  
-  * `POST /api/v1/auth/logout` (invalidação de sessão/token)  
-  * `POST /api/v1/auth/forgot` (fluxo de recuperação de senha deve respeitar `tenant_id`: owner/agent só podem resetar dentro do próprio tenant)  
-  * `GET /api/v1/me`  
-* Headers de segurança: `X-Frame-Options`, `X-Content-Type-Options`, CSP básica, `Strict-Transport-Security`.  
-* CORS restritivo ao domínio do SPA.  
-* Policies:  
-  * **Vehicles** (viewAny, view, create, update, delete) com checks de `tenant_id` e `role`.  
-  * **Users**: apenas Owners podem CRUD de usuários dentro do tenant; superuser apenas em endpoints administrativos auditados.  
-* **Testes**: validar login/logout, fluxo de recuperação de senha por tenant, e bloqueio de ações fora do papel.  
+A autorização segue **RBAC simples** via coluna `role` em `users`.  
+Policies do Laravel reforçam o controle de acesso em nível de recurso.  
 
-**Referências**  
-PDF — RBAC/Autenticação; Laravel Docs (Sanctum, Policies/Gates).
+## 4. Consequências
+### Prós
+- Simples e seguro para SPA + API stateless.  
+- Integração nativa com Laravel e testes.  
+- Fácil extensão futura para OAuth2/Passport.  
+
+### Contras
+- Não suporta out-of-the-box fluxos complexos B2B (delegação, SSO).  
+
+### Dívidas Técnicas
+- Futuro **2FA** configurável por tenant.  
+- Expiração diferenciada de tokens (curta para rotas sensíveis, padrão para demais).  
+- **Revogação manual de tokens** para maior controle de segurança.  
+- Possível evolução para OAuth2/Passport caso surjam integrações externas.  
+
+## 5. Implementação / Notas
+### Endpoints
+- `POST /api/v1/auth/login` — autenticação via credenciais, gera token.  
+- `POST /api/v1/auth/logout` — invalida token atual.  
+- `POST /api/v1/auth/forgot` — inicia fluxo de recuperação de senha (scoped por tenant).  
+- `POST /api/v1/auth/reset` — redefine senha, validando `tenant_id`.  
+- `GET /api/v1/me` — retorna dados do usuário autenticado e seu `tenant_id`.  
+
+### RBAC / Policies
+- **Vehicles**:  
+  - `create`, `update`, `view`: **owner** e **agent** (apenas dentro do tenant).  
+  - `delete`: apenas **owner** ou **superuser** (auditado).  
+- **Users**:  
+  - CRUD permitido apenas a **superuser**, o user deve ser vinculado a um tenant.   
+
+### Segurança adicional
+- Headers de segurança:  
+  - `Strict-Transport-Security`, `X-Frame-Options`, `X-Content-Type-Options`, CSP básica.  
+- CORS restrito ao domínio do frontend.  
+- Logs estruturados de eventos `auth.*` com `request_id` e `tenant_id`.  
+
+### Testes automatizados
+- Login/logout com Bearer Token.  
+- Fluxo de recuperação de senha por tenant.  
+- Acesso negado a usuários fora do papel.  
+- Auditoria de acessos cross-tenant (superuser).  
+
+## 6. Referências
+- Laravel Docs: Sanctum (API Tokens), Policies e Gates.  
+- OWASP Cheat Sheet Series — Authentication & Session Management.

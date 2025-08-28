@@ -1,15 +1,15 @@
 flowchart TB
-    U[Usuário / SPA / Postman] -->|HTTPS| CF[CloudFront]
+    U[Usuário / SPA / Postman] -->|HTTPS + Bearer| CF[CloudFront]
     CF --> WAF[WAF + Shield]
-    WAF --> ECS[ECS/EKS - Laravel containers Fargate]
+    WAF --> ECS[ECS/EKS - Laravel containers (Fargate)]
 
-    subgraph VPC [VPC]
+    subgraph VPC [VPC Privada]
         direction TB
         ECS --> RDS[(RDS Multi-AZ + Read Replicas)]
         ECS --> Redis[(ElastiCache Redis Cluster)]
         ECS --> SQS[(SQS - filas assíncronas)]
         ECS --> S3[(S3 - imagens e artefatos)]
-        ECS --> SM[(AWS Secrets Manager)]
+        ECS --> SM[(Secrets Manager - credenciais e chaves)]
         ECS --> NAT[NAT Gateway]
     end
 
@@ -20,5 +20,11 @@ flowchart TB
 
     S3 --> CRR[(Replicação cross-region)]
     RDS --> Snap[(Snapshots e backups)]
-
     SM --> ECS
+
+    note right of ECS
+      Autenticação: Sanctum Bearer Token (stateless)\n
+      Tenancy: X-Tenant (dev) / fallback tenant do usuário (prod)\n
+      Redis: obrigatório em produção (rate-limit, cache, jobs)\n
+      Evolução: WAF/Shield, tracing via OTEL, SQS assíncrono
+    end

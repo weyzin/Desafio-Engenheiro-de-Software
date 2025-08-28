@@ -1,14 +1,20 @@
 flowchart TB
-    User[Usuário / Postman] -->|HTTPS| CF[CloudFront opcional]
+    U[Usuário / Postman / SPA] -->|HTTPS + Bearer| CF[CloudFront opcional]
     CF --> EB[Elastic Beanstalk - Laravel API]
 
-    EB --> RDS[(RDS Single-AZ Postgres ou MySQL)]
-    EB --> Redis[(ElastiCache Redis)]
+    EB --> RDS[(RDS Single-AZ Postgres/MySQL)]
+    EB --> Redis[(Redis - opcional em CI/MVP; obrigatório em produção)]
     EB --> S3[(S3 - imagens de veículos)]
-    EB --> SES[(SES - emails)]
+    EB --> SES[(SES/SMTP - emails de reset)]
     EB --> CW[CloudWatch - logs e métricas]
 
     RDS --> CW
     Redis --> CW
     S3 --> CW
     SES --> CW
+
+    note right of EB
+      Autenticação: Sanctum Bearer Token (stateless)\n
+      Tenancy: X-Tenant (dev) / fallback tenant do usuário (prod)\n
+      Auditoria: superuser cross-tenant sempre logado
+    end

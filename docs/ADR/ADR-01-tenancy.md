@@ -1,38 +1,53 @@
-# ADR-01: Tenancy em single-DB com `tenant_id`
+# ADR-01: Tenancy em Single-DB com `tenant_id`
 
-**Contexto**  
-O sistema deve isolar dados por organização. O escopo do desafio favorece simplicidade operacional e baixo custo, sem necessidade de sharding ou múltiplos bancos por tenant.
+## 1. Contexto
+O sistema precisa garantir **isolamento de dados por organização (tenant)** de forma simples, com baixo custo e manutenção centralizada.  
+Para o escopo atual, não é necessário sharding nem múltiplos bancos de dados.
 
-**Opções consideradas**  
-1) Single-DB, coluna `tenant_id` + Global Scopes/Policies.  
-2) Multi-DB (um banco por tenant).  
-3) Schema-per-tenant (mesmo DB, schemas distintos).
+## 2. Opções consideradas
+1. **Single-DB com coluna `tenant_id`** em entidades multitenant, usando Global Scopes e Policies.  
+2. Multi-DB (um banco por tenant).  
+3. Schema-per-tenant (mesmo DB, múltiplos schemas).  
 
-**Decisão**  
-Adotar **single-DB** com coluna `tenant_id` em entidades multitenant (e.g., `users`, `vehicles`). Aplicar **Global Scope** no Eloquent e **Policies** para reforço na camada de autorização. Resolver tenant por **subdomínio** (ex.: `acme.app.com`) com **fallback header `X-Tenant`**.  
-👉 O header `X-Tenant` será aceito apenas em **cenários controlados** (dev/test/admin). Em **produção**, deve ser **bloqueado por padrão**, exceto em uma whitelist explícita de endpoints administrativos, sempre com forte validação para evitar spoofing.
+## 3. Decisão
+Adotamos **Single-DB** com coluna `tenant_id` em entidades multitenant (e.g. `users`, `vehicles`).  
+O tenant é resolvido da seguinte forma:
 
-**Consequências (prós/cons, dívidas)**  
-* **Prós**  
-  * Simplicidade de operação, custo baixo, migrações únicas.  
-  * Facilidade para relatórios cross-tenant (via superuser).  
-* **Contras**  
-  * Menor isolamento físico (risco mitigado por Policies, testes e validação).  
-  * Necessidade de **constraints compostas** (e.g., `unique(tenant_id, plate)` em veículos, `unique(tenant_id, email)` em usuários, etc.).  
-* **Dívidas**  
-  * Plano de evolução para múltiplos DBs caso crescimento exija (chave lógica permanece `tenant_id`).  
-  * Migração futura pode **particionar dados por `tenant_id`**, evoluindo para múltiplos DBs ou sharding.  
-  * A manutenção do `tenant_id` como chave lógica garante **compatibilidade retroativa**, mesmo após sharding ou migração para múltiplos DBs.
+- **Ambiente de desenvolvimento/testes:** via header `X-Tenant`.  
+- **Ambiente de produção:** fallback automático para o `tenant_id` do usuário autenticado, quando o header não é enviado.  
+- **Cross-tenant:** bloqueado por padrão (retorna **403/404**). Apenas usuários `superuser` podem acessar múltiplos tenants em endpoints administrativos **auditados**.  
 
-**Implementação/Notas**  
-* Trait `BelongsToTenant`; Middleware `ResolveTenant` (subdomínio > header).  
-* Índices por `tenant_id` + campos de filtro.  
-* Campos de auditoria (`created_by`, `updated_by`, `deleted_by`) também vinculam `tenant_id`, impedindo ações cross-tenant.  
-* Bypass de Global Scope para superuser quando estritamente necessário; **todo acesso cross-tenant deve ser auditado e restrito a endpoints administrativos**.  
-* Testes:  
-  * Impedir acesso cross-tenant (usuário comum).  
-  * Validar comportamento do header `X-Tenant` inválido.  
-  * Confirmar acesso positivo de superuser a múltiplos tenants (cross-tenant legítimo).  
+> 🔮 Futuro: está no roadmap permitir resolução de tenant por **subdomínio** (ex.: `acme.app.com`), mantendo compatibilidade retroativa com `tenant_id`.
 
-**Referências**  
-PDF — seção Multi-tenancy; Laravel Docs (Global Scopes, Policies).
+## 4. Consequências
+### Prós
+- Simplicidade operacional e custo baixo.  
+- Migrations únicas.  
+- Facilidade para relatórios cross-tenant via superuser.  
+
+### Contras
+- Menor isolamento físico entre tenants.  
+- Risco de spoofing de header se não validado em ambientes restritos.  
+
+### Dívidas Técnicas
+- Evolução futura para múltiplos DBs ou sharding caso necessário.  
+- `tenant_id` mantido como chave lógica garante compatibilidade retroativa.  
+
+## 5. Implementação / Notas
+- Trait **`BelongsToTenant`** aplicada a modelos.  
+- Middleware **`ResolveTenant`**:  
+  - Primeiro tenta **X-Tenant** (em dev/test).  
+  - Fallback: usa o `tenant_id` do usuário autenticado.  
+- **Constraints compostas** em campos críticos:  
+  - `unique(tenant_id, email)` em usuários.  
+  - `unique(tenant_id, plate)` em veículos.  
+- Auditoria: campos (`created_by`, `updated_by`, `deleted_by`) vinculados a `tenant_id`.  
+- Superuser pode fazer bypass de Global Scopes somente em endpoints administrativos auditados.  
+- Testes automatizados garantem:  
+  - Bloqueio de acessos cross-tenant indevidos.  
+  - Validação de headers inválidos.  
+  - Acesso legítimo de superuser.  
+
+## 6. Referências
+- Laravel Docs: Global Scopes, Policies.  
+- [Multi-Tenancy Patterns](https://learn.microsoft.com/en-us/azure/architecture/guide/multitenant/overview).
