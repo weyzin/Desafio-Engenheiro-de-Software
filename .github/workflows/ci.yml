@@ -2,51 +2,57 @@ name: CI
 
 on:
   push:
-    branches: [ "main" ]
   pull_request:
-    branches: [ "main" ]
 
 jobs:
-  build:
+  tests:
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: laravel
-          POSTGRES_PASSWORD: secret
-          POSTGRES_DB: laravel
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd="pg_isready -U laravel"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up PHP
+      - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
-          extensions: mbstring, pdo, pdo_pgsql, bcmath
+          extensions: mbstring, intl, gd, pdo_sqlite, sqlite3
           coverage: none
 
-      - name: Install dependencies
-        run: composer install --no-progress --prefer-dist --optimize-autoloader
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: composer-
 
-      - name: Run Laravel Pint (lint)
-        run: ./vendor/bin/pint --test
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: App key & .env.testing
+        run: |
+          cp .env.example .env.testing
+          php -r "file_put_contents('.env.testing', preg_replace('/^DB_CONNECTION=.*/m','DB_CONNECTION=sqlite', file_get_contents('.env.testing')));"
+          echo "DB_DATABASE=:memory:" >> .env.testing
+          # drivers “stateless”
+          echo "CACHE_DRIVER=array" >> .env.testing
+          echo "SESSION_DRIVER=array" >> .env.testing
+          echo "QUEUE_CONNECTION=sync" >> .env.testing
+          # Sanctum/Stateful OFF para API
+          echo "SANCTUM_STATEFUL_DOMAINS=" >> .env.testing
+          echo "SESSION_DOMAIN=localhost" >> .env.testing
+          php artisan key:generate --env=testing
+
+      - name: Optimize (optional)
+        run: |
+          php artisan config:clear --env=testing
+          php artisan route:clear --env=testing
+          php artisan view:clear --env=testing
 
       - name: Run tests
         env:
-          DB_CONNECTION: pgsql
-          DB_HOST: 127.0.0.1
-          DB_PORT: 5432
-          DB_DATABASE: laravel
-          DB_USERNAME: laravel
-          DB_PASSWORD: secret
-        run: php artisan test --parallel
+          APP_ENV: testing
+          APP_KEY: base64:dummyKeyWillBeOverwritten=
+        run: |
+          php artisan test --env=testing -q
+          # ou: vendor/bin/phpunit
