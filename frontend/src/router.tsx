@@ -14,6 +14,8 @@ import UserFormPage from "./modules/admin/users/UserFormPage.tsx"
 import TenantsListPage from "./modules/admin/tenants/TenantsListPage.tsx"
 import TenantFormPage from "./modules/admin/tenants/TenantFormPage.tsx"
 import AdminHome from "./modules/admin/AdminHome";
+import ForgotPasswordPage from "./modules/auth/ForgotPasswordPage";
+import ResetPasswordPage from './modules/auth/ResetPasswordPage';
 
 const queryClient = new QueryClient()
 
@@ -37,9 +39,11 @@ export const router = createBrowserRouter([
       { path: "/login", element: <LoginPage /> },
       {
         path: "/forgot",
-        element: <div className="p-6">Entre em contato com o suporte para redefinir sua senha.</div>,
+        element: <ForgotPasswordPage />,
       },
-
+      { path: "/reset-password", 
+      element: <ResetPasswordPage /> 
+      },
       {
         element: (
           <Protected>
