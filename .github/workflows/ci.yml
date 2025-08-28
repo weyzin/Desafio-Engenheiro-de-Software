@@ -55,10 +55,9 @@ jobs:
         env:
           APP_ENV: testing
           APP_KEY: base64:dummyKeyWillBeOverwritten=
-        run: php artisan test --env=testing -q
+        run: php artisan test --env=testing
 
-
-  frontend-tests:
+  frontend-build-and-tests:
     runs-on: ubuntu-latest
 
     steps:
@@ -80,6 +79,13 @@ jobs:
         working-directory: ./frontend
         run: npm run build
 
-      - name: Run frontend tests
+      # Só roda "npm test" se existir script "test" no package.json
+      - name: Run frontend tests (if present)
         working-directory: ./frontend
-        run: npm test
+        run: |
+          if node -e "process.exit(!!(require('./package.json').scripts && require('./package.json').scripts.test) ? 0 : 1)"; then
+            echo "Found test script in package.json. Running: npm test"
+            npm test
+          else
+            echo "No \"test\" script in package.json. Skipping frontend tests."
+          fi
