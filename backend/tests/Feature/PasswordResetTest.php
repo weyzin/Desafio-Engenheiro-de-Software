@@ -12,7 +12,10 @@ class PasswordResetTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** habilita o DatabaseSeeder em cada teste */
+    /**
+     * Executa o DatabaseSeeder em cada teste.
+     * (No CI, com DB em memória, garante que owner@acme.com exista.)
+     */
     protected $seed = true;
 
     /** /\api\/v1\/auth\/forgot deve responder 200 para e-mail existente */
