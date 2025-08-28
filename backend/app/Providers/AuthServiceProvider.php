@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Policies\VehiclePolicy;
 use App\Policies\UserPolicy;
 use App\Policies\TenantPolicy;
+use App\Models\Tenant;
 
 class AuthServiceProvider extends ServiceProvider
 {

@@ -3,8 +3,6 @@
 namespace Tests\Feature;
 
 use Tests\TestCase;
-use App\Models\User;
-use App\Models\Tenant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 class AuthTest extends TestCase
@@ -13,41 +11,44 @@ class AuthTest extends TestCase
 
     protected function setUp(): void {
         parent::setUp();
-        $this->seed(); // usa os seeders abaixo
+        $this->seed();
     }
 
-    public function test_login_me_logout_flow(): void
+    public function test_sanctum_login_me_logout_flow(): void
     {
         $headers = ['X-Tenant' => 'acme', 'Accept' => 'application/json'];
 
-        // login
-        $res = $this->withHeaders($headers)->postJson('/api/v1/auth/login', [
+        // login (retorna token + user)
+        $login = $this->withHeaders($headers)->postJson('/api/v1/auth/login', [
             'email' => 'owner@acme.com',
             'password' => 'Password!123',
-        ]);
-        $res->assertStatus(200)->assertJsonStructure(['data' => ['id','email','role','tenant_id']]);
+        ])->assertStatus(200)
+          ->assertJsonStructure(['data' => ['token','token_type','user' => ['id','email','name','role','tenant_id']]])
+          ->json('data');
 
-        // session cookie deve existir
-        $this->assertTrue($res->headers->has('set-cookie'));
+        $token = $login['token'];
 
-        // me
-        $res = $this->withHeaders($headers)->get('/api/v1/me');
-        $res->assertStatus(200)->assertJsonStructure(['data' => ['id','email','tenant_id']]);
+        // me (sem exigir tenant; protegido só por auth)
+        $me = $this->withHeaders([
+                'Accept'        => 'application/json',
+                'Authorization' => "Bearer {$token}",
+            ])->get('/api/v1/me')
+            ->assertStatus(200)
+            ->assertJsonStructure(['data' => ['id','email','name','role','tenant_id','active_tenant']]);
 
-        // logout
-        $res = $this->withHeaders($headers)->post('/api/v1/auth/logout');
-        $res->assertStatus(204);
+        // logout (revoga o token atual)
+        $this->withHeaders([
+                'Accept'        => 'application/json',
+                'Authorization' => "Bearer {$token}",
+            ])->post('/api/v1/auth/logout')
+            ->assertStatus(204);
     }
 
     public function test_forgot_is_idempotent_and_returns_200(): void
     {
-        $headers = ['X-Tenant' => 'acme', 'Accept' => 'application/json'];
-
-        $res = $this->withHeaders($headers)->postJson('/api/v1/auth/forgot', [
-            'email' => 'owner@acme.com',
-        ]);
-
-        $res->assertStatus(200)
+        $this->withHeaders(['X-Tenant' => 'acme', 'Accept' => 'application/json'])
+            ->postJson('/api/v1/auth/forgot', ['email' => 'owner@acme.com'])
+            ->assertStatus(200)
             ->assertJson(fn($j) => $j->has('message'));
     }
 }
