@@ -34,11 +34,9 @@ jobs:
           cp .env.example .env.testing
           php -r "file_put_contents('.env.testing', preg_replace('/^DB_CONNECTION=.*/m','DB_CONNECTION=sqlite', file_get_contents('.env.testing')));"
           echo "DB_DATABASE=:memory:" >> .env.testing
-          # drivers “stateless”
           echo "CACHE_DRIVER=array" >> .env.testing
           echo "SESSION_DRIVER=array" >> .env.testing
           echo "QUEUE_CONNECTION=sync" >> .env.testing
-          # Sanctum/Stateful OFF para API
           echo "SANCTUM_STATEFUL_DOMAINS=" >> .env.testing
           echo "SESSION_DOMAIN=localhost" >> .env.testing
           php artisan key:generate --env=testing
@@ -53,6 +51,4 @@ jobs:
         env:
           APP_ENV: testing
           APP_KEY: base64:dummyKeyWillBeOverwritten=
-        run: |
-          php artisan test --env=testing -q
-          # ou: vendor/bin/phpunit
+        run: php artisan test --env=testing -q
