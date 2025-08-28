@@ -1,25 +1,30 @@
 flowchart TB
     U[Usuário / SPA / Postman] -->|HTTPS + Bearer| CF[CloudFront]
     CF --> WAF[WAF + Shield]
-    WAF --> ECS[ECS/EKS - Laravel containers (Fargate)]
+    WAF --> ECS[ECS/EKS - Laravel containers Fargate]
 
     subgraph VPC [VPC Privada]
         direction TB
         ECS --> RDS[(RDS Multi-AZ + Read Replicas)]
         ECS --> Redis[(ElastiCache Redis Cluster)]
-        ECS --> SQS[(SQS - filas assíncronas)]
+        ECS --> SQS[(SQS - filas assincronas)]
         ECS --> S3[(S3 - imagens e artefatos)]
         ECS --> SM[(Secrets Manager - credenciais e chaves)]
         ECS --> NAT[NAT Gateway]
     end
 
-    ECS --> CW[CloudWatch - logs e métricas]
+    ECS --> CW[CloudWatch - logs e metricas]
     ECS --> OTEL[OpenTelemetry - tracing]
     CW --> S3Logs[(S3 - arquivamento de logs)]
     S3Logs --> Athena[Athena - consultas de logs]
 
-    S3 --> CRR[(Replicação cross-region)]
+    S3 --> CRR[(Replicacao cross-region)]
     RDS --> Snap[(Snapshots e backups)]
     SM --> ECS
 
-    LEGEND[Autenticação: Sanctum Bearer Token (stateless)<br/>Tenancy: X-Tenant (dev) / fallback tenant do usuário (prod)<br/>Redis: obrigatório em produção (rate-limit, cache, jobs)<br/>Evolução: WAF/Shield, tracing via OTEL, SQS assíncrono]
+    subgraph LEGEND [Legenda]
+        L1[Autenticacao: Sanctum Bearer Token - stateless]
+        L2[Tenancy: X-Tenant - dev / fallback tenant do usuario - prod]
+        L3[Redis: obrigatorio em producao - rate-limit, cache, jobs]
+        L4[Evolucao: WAF/Shield, tracing via OTEL, SQS assincrono]
+    end
