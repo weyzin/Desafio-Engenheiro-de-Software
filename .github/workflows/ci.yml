@@ -42,6 +42,7 @@ jobs:
           echo "SANCTUM_STATEFUL_DOMAINS=" >> .env.testing
           echo "SESSION_DOMAIN=localhost" >> .env.testing
           php artisan key:generate --env=testing
+          php artisan optimize:clear --env=testing
 
       - name: Optimize (optional)
         working-directory: ./backend
@@ -54,7 +55,6 @@ jobs:
         working-directory: ./backend
         env:
           APP_ENV: testing
-          APP_KEY: base64:dummyKeyWillBeOverwritten=
         run: php artisan test --env=testing
 
   frontend-build-and-tests:
@@ -79,7 +79,6 @@ jobs:
         working-directory: ./frontend
         run: npm run build
 
-      # Só roda "npm test" se existir script "test" no package.json
       - name: Run frontend tests (if present)
         working-directory: ./frontend
         run: |
